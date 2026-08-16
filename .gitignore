@@ -200,3 +200,9 @@ case_studies/*/catalog/*.json
 # roborev snapshots and the local review-agent config
 /.roborev/
 /.roborev.toml
+
+# Lazy trading case study data: ignore local parquet downloads, except the
+# canonical price file the notebook reads by default.
+/case_studies/lazy_trading/*.parquet
+!/case_studies/lazy_trading/hs_funds_prices.parquet
+
