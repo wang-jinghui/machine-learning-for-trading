@@ -228,3 +228,774 @@ Number of Portfolios                         33
 Number of Failed Portfolios                   0
 Number of Fallback Portfolios                 0
 dtype: str
+
+========================================================================
+[2026-08-31 16:22:59] WalkForward+Optuna 参数搜索：FITNESS_MEASURES
+========================================================================
+{'mean-variance-avgdd': [Mean, Variance, Average Drawdown], 'mean-semideviation-avgdd': [Mean, Semi-Deviation, Average Drawdown], 'mean-mad-avgdd': [Mean, Mean Absolute Deviation, Average Drawdown], 'mean-mad-maxdd-cvar-sharpe': [Mean, Mean Absolute Deviation, MAX Drawdown, CVaR, Sharpe Ratio], 'mean-mad-avgdd-cvar-sharpe': [Mean, Mean Absolute Deviation, Average Drawdown, CVaR, Sharpe Ratio]}
+
+========================================================================
+[2026-08-31 16:41:35] 目标函数：提索比率
+========================================================================
+RatioMeasure.ANNUALIZED_SORTINO_RATIO
+
+========================================================================
+[2026-08-31 16:41:35] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 20, 'nondomin__threshold': -0.4, 'correlate__threshold': 0.3, 'nondomin__fitness_measures': 'mean-mad-avgdd-cvar-sharpe'}
+
+========================================================================
+[2026-08-31 16:41:35] 最优得分
+========================================================================
+1.5602204014402667
+
+========================================================================
+[2026-08-31 16:49:02] OOS MPP Summary
+========================================================================
+Mean                                     0.026%
+Annualized Mean                           6.51%
+Variance                                0.0014%
+Annualized Variance                       0.34%
+Semi-Variance                          0.00069%
+Annualized Semi-Variance                  0.17%
+Standard Deviation                        0.37%
+Annualized Standard Deviation             5.84%
+Semi-Deviation                            0.26%
+Annualized Semi-Deviation                 4.17%
+Mean Absolute Deviation                   0.26%
+CVaR at 95%                               0.85%
+EVaR at 95%                               1.33%
+Worst Realization                         2.25%
+CDaR at 95%                               5.68%
+MAX Drawdown                              7.31%
+Average Drawdown                          2.09%
+EDaR at 95%                               6.01%
+First Lower Partial Moment                0.13%
+Ulcer Index                               0.027
+Gini Mean Difference                      0.38%
+Value at Risk at 95%                      0.52%
+Drawdown at Risk at 95%                   5.27%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000000%
+Fourth Lower Partial Moment           0.000000%
+Skew                                    -22.16%
+Kurtosis                                731.99%
+Sharpe Ratio                              0.070
+Annualized Sharpe Ratio                    1.11
+Sortino Ratio                             0.098
+Annualized Sortino Ratio                   1.56
+Mean Absolute Deviation Ratio              0.10
+First Lower Partial Moment Ratio           0.20
+Value at Risk Ratio at 95%                0.049
+CVaR Ratio at 95%                         0.030
+Entropic Risk Measure Ratio at 95%     0.000086
+EVaR Ratio at 95%                         0.019
+Worst Realization Ratio                   0.011
+Drawdown at Risk Ratio at 95%            0.0049
+CDaR Ratio at 95%                        0.0045
+Calmar Ratio                             0.0035
+Average Drawdown Ratio                    0.012
+EDaR Ratio at 95%                        0.0043
+Ulcer Index Ratio                        0.0097
+Gini Mean Difference Ratio                0.067
+Avg nb of Assets per Portfolio             12.4
+Number of Portfolios                         33
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-08-31 16:54:28] WalkForward+Optuna 参数搜索：FITNESS_MEASURES
+========================================================================
+{'mean-variance': [Mean, Variance], 'mean-variance-maxdd': [Mean, Variance, MAX Drawdown], 'mean-variance-avgdd': [Mean, Variance, Average Drawdown], 'mean-semideviation-avgdd': [Mean, Semi-Deviation, Average Drawdown], 'mean-mad-avgdd': [Mean, Mean Absolute Deviation, Average Drawdown], 'mean-mad-maxdd-cvar-sharpe': [Mean, Mean Absolute Deviation, MAX Drawdown, CVaR, Sharpe Ratio], 'mean-mad-avgdd-cvar-sharpe': [Mean, Mean Absolute Deviation, Average Drawdown, CVaR, Sharpe Ratio]}
+
+========================================================================
+[2026-08-31 16:58:08] WalkForward 配置：Train/Test
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=126, train_size=504)
+
+========================================================================
+[2026-08-31 17:04:07] 目标函数
+========================================================================
+RatioMeasure.ANNUALIZED_SHARPE_RATIO
+
+========================================================================
+[2026-08-31 17:04:07] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 25, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.2, 'nondomin__fitness_measures': 'mean-mad-avgdd'}
+
+========================================================================
+[2026-08-31 17:04:07] 最优得分
+========================================================================
+1.2056964922283664
+
+========================================================================
+[2026-08-31 17:11:21] OOS MPP Summary
+========================================================================
+Mean                                     0.027%
+Annualized Mean                           6.82%
+Variance                                0.0013%
+Annualized Variance                       0.32%
+Semi-Variance                          0.00062%
+Annualized Semi-Variance                  0.16%
+Standard Deviation                        0.36%
+Annualized Standard Deviation             5.65%
+Semi-Deviation                            0.25%
+Annualized Semi-Deviation                 3.96%
+Mean Absolute Deviation                   0.22%
+CVaR at 95%                               0.82%
+EVaR at 95%                               1.60%
+Worst Realization                         2.87%
+CDaR at 95%                               4.05%
+MAX Drawdown                              6.92%
+Average Drawdown                          1.20%
+EDaR at 95%                               4.96%
+First Lower Partial Moment                0.11%
+Ulcer Index                               0.016
+Gini Mean Difference                      0.34%
+Value at Risk at 95%                      0.48%
+Drawdown at Risk at 95%                   3.08%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000000%
+Fourth Lower Partial Moment           0.000000%
+Skew                                     -9.93%
+Kurtosis                               1369.35%
+Sharpe Ratio                              0.076
+Annualized Sharpe Ratio                    1.21
+Sortino Ratio                              0.11
+Annualized Sortino Ratio                   1.72
+Mean Absolute Deviation Ratio              0.12
+First Lower Partial Moment Ratio           0.24
+Value at Risk Ratio at 95%                0.057
+CVaR Ratio at 95%                         0.033
+Entropic Risk Measure Ratio at 95%     0.000090
+EVaR Ratio at 95%                         0.017
+Worst Realization Ratio                  0.0094
+Drawdown at Risk Ratio at 95%            0.0088
+CDaR Ratio at 95%                        0.0067
+Calmar Ratio                             0.0039
+Average Drawdown Ratio                    0.023
+EDaR Ratio at 95%                        0.0055
+Ulcer Index Ratio                         0.017
+Gini Mean Difference Ratio                0.079
+Avg nb of Assets per Portfolio             13.4
+Number of Portfolios                         17
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-08-31 18:07:26] WalkForward+Optuna 参数搜索：FITNESS_MEASURES
+========================================================================
+{'mean-variance': [Mean, Variance], 'mean-variance-maxdd': [Mean, Variance, MAX Drawdown], 'mean-variance-avgdd': [Mean, Variance, Average Drawdown], 'mean-semideviation-avgdd': [Mean, Semi-Deviation, Average Drawdown], 'mean-mad-maxdd': [Mean, Mean Absolute Deviation, MAX Drawdown], 'mean-mad-avgdd': [Mean, Mean Absolute Deviation, Average Drawdown], 'mean-mad-maxdd-cvar': [Mean, Mean Absolute Deviation, MAX Drawdown, CVaR], 'mean-mad-maxdd-cvar-sharpe': [Mean, Mean Absolute Deviation, MAX Drawdown, CVaR, Sharpe Ratio], 'mean-mad-avgdd-cvar': [Mean, Mean Absolute Deviation, Average Drawdown, CVaR], 'mean-mad-avgdd-cvar-sharpe': [Mean, Mean Absolute Deviation, Average Drawdown, CVaR, Sharpe Ratio]}
+
+========================================================================
+[2026-08-31 18:09:19] WalkForward 配置：Train/Test
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=252, train_size=504)
+
+========================================================================
+[2026-08-31 18:09:19] Objective配置
+========================================================================
+def objective(trial):
+    # 有序参数：让 TPE 感知数值距离
+    min_n_assets = trial.suggest_int("nondomin__min_n_assets", 5, 25, step=5)
+    threshold = trial.suggest_float("nondomin__threshold", -0.5, -0.3, step=0.1)
+    corr_threshold = trial.suggest_float("correlate__threshold", 0.1, 0.3, step=0.1)
+    # 无序分类参数：fitness_measures 是筛选逻辑，不是目标函数
+    fm_name = trial.suggest_categorical("nondomin__fitness_measures", list(FITNESS_MEASURES))
+    fitness_measures = FITNESS_MEASURES[fm_name]
+
+    model = Pipeline([
+        ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=min_n_assets,
+            threshold=threshold,
+            fitness_measures=fitness_measures,
+        )),
+        ("correlate", DropCorrelated(threshold=corr_threshold)),
+        ("optimization", EqualWeighted()),
+    ])
+
+    pred = cross_val_predict(model, X, cv=cv, n_jobs=4)  # 无 y
+    # 收益 - 回撤 - 尾部风险（CVaR 量级 0.02~0.05，与收益同尺度）
+    return pred.annualized_sharpe_ratio
+
+
+========================================================================
+[2026-08-31 18:16:54] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 25, 'nondomin__threshold': -0.3, 'correlate__threshold': 0.3, 'nondomin__fitness_measures': 'mean-mad-avgdd'}
+
+========================================================================
+[2026-08-31 18:16:54] 最优得分
+========================================================================
+1.1123184493366896
+
+========================================================================
+[2026-08-31 18:24:22] OOS MPP Summary
+========================================================================
+Mean                                     0.024%
+Annualized Mean                           6.16%
+Variance                                0.0012%
+Annualized Variance                       0.31%
+Semi-Variance                          0.00062%
+Annualized Semi-Variance                  0.16%
+Standard Deviation                        0.35%
+Annualized Standard Deviation             5.54%
+Semi-Deviation                            0.25%
+Annualized Semi-Deviation                 3.97%
+Mean Absolute Deviation                   0.24%
+CVaR at 95%                               0.82%
+EVaR at 95%                               1.29%
+Worst Realization                         2.19%
+CDaR at 95%                               5.01%
+MAX Drawdown                              6.82%
+Average Drawdown                          1.64%
+EDaR at 95%                               5.38%
+First Lower Partial Moment                0.12%
+Ulcer Index                               0.021
+Gini Mean Difference                      0.36%
+Value at Risk at 95%                      0.49%
+Drawdown at Risk at 95%                   4.23%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000000%
+Fourth Lower Partial Moment           0.000000%
+Skew                                    -27.20%
+Kurtosis                                729.23%
+Sharpe Ratio                              0.070
+Annualized Sharpe Ratio                    1.11
+Sortino Ratio                             0.098
+Annualized Sortino Ratio                   1.55
+Mean Absolute Deviation Ratio              0.10
+First Lower Partial Moment Ratio           0.20
+Value at Risk Ratio at 95%                0.050
+CVaR Ratio at 95%                         0.030
+Entropic Risk Measure Ratio at 95%     0.000082
+EVaR Ratio at 95%                         0.019
+Worst Realization Ratio                   0.011
+Drawdown at Risk Ratio at 95%            0.0058
+CDaR Ratio at 95%                        0.0049
+Calmar Ratio                             0.0036
+Average Drawdown Ratio                    0.015
+EDaR Ratio at 95%                        0.0045
+Ulcer Index Ratio                         0.012
+Gini Mean Difference Ratio                0.067
+Avg nb of Assets per Portfolio             16.4
+Number of Portfolios                          9
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-08-31 18:44:37] WalkForward+Optuna 参数搜索：FITNESS_MEASURES
+========================================================================
+{'mean-variance': [Mean, Variance], 'mean-variance-maxdd': [Mean, Variance, MAX Drawdown], 'mean-variance-avgdd': [Mean, Variance, Average Drawdown], 'mean-semideviation-avgdd': [Mean, Semi-Deviation, Average Drawdown], 'mean-mad-maxdd': [Mean, Mean Absolute Deviation, MAX Drawdown], 'mean-mad-avgdd': [Mean, Mean Absolute Deviation, Average Drawdown], 'mean-mad-maxdd-cvar': [Mean, Mean Absolute Deviation, MAX Drawdown, CVaR], 'mean-mad-maxdd-cvar-sharpe': [Mean, Mean Absolute Deviation, MAX Drawdown, CVaR, Sharpe Ratio], 'mean-mad-avgdd-cvar': [Mean, Mean Absolute Deviation, Average Drawdown, CVaR], 'mean-mad-avgdd-cvar-sharpe': [Mean, Mean Absolute Deviation, Average Drawdown, CVaR, Sharpe Ratio]}
+
+
+========================================================================
+[2026-08-31 18:51:25] WalkForward 配置：Train/Test
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=252, train_size=504)
+
+========================================================================
+[2026-08-31 18:51:25] Objective配置
+========================================================================
+def objective(trial):
+    # 有序参数：让 TPE 感知数值距离
+    min_n_assets = trial.suggest_int("nondomin__min_n_assets", 5, 25, step=5)
+    threshold = trial.suggest_float("nondomin__threshold", -0.5, -0.3, step=0.1)
+    corr_threshold = trial.suggest_float("correlate__threshold", 0.1, 0.4, step=0.1)
+    # 无序分类参数：fitness_measures 是筛选逻辑，不是目标函数
+    fm_name = trial.suggest_categorical("nondomin__fitness_measures", list(FITNESS_MEASURES))
+    fitness_measures = FITNESS_MEASURES[fm_name]
+
+    model = Pipeline([
+        ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("extremes", SelectKExtremes(k=150, measure=ExtraRiskMeasure.SKEW, highest=True)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=min_n_assets,
+            threshold=threshold,
+            fitness_measures=fitness_measures,
+        )),
+        ("correlate", DropCorrelated(threshold=corr_threshold)),
+        ("optimization", EqualWeighted()),
+    ])
+    pred = cross_val_predict(model, X, cv=cv, n_jobs=4)
+    return pred.annualized_sharpe_ratio
+
+
+========================================================================
+[2026-08-31 18:53:39] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 25, 'nondomin__threshold': -0.4, 'correlate__threshold': 0.1, 'nondomin__fitness_measures': 'mean-variance-avgdd'}
+
+========================================================================
+[2026-08-31 18:53:39] 最优得分
+========================================================================
+1.0815296317007759
+
+========================================================================
+[2026-08-31 19:02:41] OOS MPP Summary
+========================================================================
+Mean                                     0.021%
+Annualized Mean                           5.26%
+Variance                               0.00094%
+Annualized Variance                       0.24%
+Semi-Variance                          0.00045%
+Annualized Semi-Variance                  0.11%
+Standard Deviation                        0.31%
+Annualized Standard Deviation             4.87%
+Semi-Deviation                            0.21%
+Annualized Semi-Deviation                 3.36%
+Mean Absolute Deviation                   0.20%
+CVaR at 95%                               0.72%
+EVaR at 95%                               1.06%
+Worst Realization                         1.93%
+CDaR at 95%                               5.02%
+MAX Drawdown                              7.52%
+Average Drawdown                          1.29%
+EDaR at 95%                               5.60%
+First Lower Partial Moment                0.10%
+Ulcer Index                               0.018
+Gini Mean Difference                      0.31%
+Value at Risk at 95%                      0.44%
+Drawdown at Risk at 95%                   3.62%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000000%
+Fourth Lower Partial Moment           0.000000%
+Skew                                     21.36%
+Kurtosis                                778.81%
+Sharpe Ratio                              0.068
+Annualized Sharpe Ratio                    1.08
+Sortino Ratio                             0.099
+Annualized Sortino Ratio                   1.57
+Mean Absolute Deviation Ratio              0.10
+First Lower Partial Moment Ratio           0.21
+Value at Risk Ratio at 95%                0.047
+CVaR Ratio at 95%                         0.029
+Entropic Risk Measure Ratio at 95%     0.000070
+EVaR Ratio at 95%                         0.020
+Worst Realization Ratio                   0.011
+Drawdown at Risk Ratio at 95%            0.0058
+CDaR Ratio at 95%                        0.0042
+Calmar Ratio                             0.0028
+Average Drawdown Ratio                    0.016
+EDaR Ratio at 95%                        0.0037
+Ulcer Index Ratio                         0.012
+Gini Mean Difference Ratio                0.067
+Avg nb of Assets per Portfolio             12.4
+Number of Portfolios                          9
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-08-31 19:04:10] WalkForward 配置：Train/Test
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=252, train_size=504)
+
+========================================================================
+[2026-08-31 19:04:10] Objective配置
+========================================================================
+def objective(trial):
+    # 有序参数：让 TPE 感知数值距离
+    min_n_assets = trial.suggest_int("nondomin__min_n_assets", 5, 25, step=5)
+    threshold = trial.suggest_float("nondomin__threshold", -0.5, -0.3, step=0.1)
+    corr_threshold = trial.suggest_float("correlate__threshold", 0.1, 0.4, step=0.1)
+    # 无序分类参数：fitness_measures 是筛选逻辑，不是目标函数
+    fm_name = trial.suggest_categorical("nondomin__fitness_measures", list(FITNESS_MEASURES))
+    fitness_measures = FITNESS_MEASURES[fm_name]
+
+    model = Pipeline([
+        ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("extremes", SelectKExtremes(k=150, measure=ExtraRiskMeasure.SKEW, highest=True)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=min_n_assets,
+            threshold=threshold,
+            fitness_measures=fitness_measures,
+        )),
+        ("correlate", DropCorrelated(threshold=corr_threshold)),
+        ("optimization", EqualWeighted()),
+    ])
+    pred = cross_val_predict(model, X, cv=cv, n_jobs=4)
+    return pred.annualized_mean
+
+
+========================================================================
+[2026-08-31 19:05:32] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 5, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'nondomin__fitness_measures': 'mean-mad-avgdd-cvar'}
+
+========================================================================
+[2026-08-31 19:05:32] 最优得分
+========================================================================
+0.07398693317437398
+
+========================================================================
+[2026-08-31 19:09:54] OOS MPP Summary
+========================================================================
+Mean                                     0.029%
+Annualized Mean                           7.40%
+Variance                                0.0021%
+Annualized Variance                       0.54%
+Semi-Variance                          0.00100%
+Annualized Semi-Variance                  0.25%
+Standard Deviation                        0.46%
+Annualized Standard Deviation             7.32%
+Semi-Deviation                            0.32%
+Annualized Semi-Deviation                 5.01%
+Mean Absolute Deviation                   0.28%
+CVaR at 95%                               1.11%
+EVaR at 95%                               1.68%
+Worst Realization                         3.09%
+CDaR at 95%                               6.28%
+MAX Drawdown                             10.19%
+Average Drawdown                          1.57%
+EDaR at 95%                               7.35%
+First Lower Partial Moment                0.14%
+Ulcer Index                               0.022
+Gini Mean Difference                      0.45%
+Value at Risk at 95%                      0.66%
+Drawdown at Risk at 95%                   4.66%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000000%
+Fourth Lower Partial Moment           0.000000%
+Skew                                     19.61%
+Kurtosis                                862.49%
+Sharpe Ratio                              0.064
+Annualized Sharpe Ratio                    1.01
+Sortino Ratio                             0.093
+Annualized Sortino Ratio                   1.48
+Mean Absolute Deviation Ratio              0.10
+First Lower Partial Moment Ratio           0.21
+Value at Risk Ratio at 95%                0.044
+CVaR Ratio at 95%                         0.027
+Entropic Risk Measure Ratio at 95%     0.000098
+EVaR Ratio at 95%                         0.018
+Worst Realization Ratio                  0.0095
+Drawdown at Risk Ratio at 95%            0.0063
+CDaR Ratio at 95%                        0.0047
+Calmar Ratio                             0.0029
+Average Drawdown Ratio                    0.019
+EDaR Ratio at 95%                        0.0040
+Ulcer Index Ratio                         0.013
+Gini Mean Difference Ratio                0.065
+Avg nb of Assets per Portfolio              7.9
+Number of Portfolios                          9
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+
+
+========================================================================
+[2026-08-31 19:23:53] WalkForward 配置：Train/Test
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=126, train_size=504)
+
+========================================================================
+[2026-08-31 19:23:53] Objective配置
+========================================================================
+def objective(trial):
+    # 有序参数：让 TPE 感知数值距离
+    min_n_assets = trial.suggest_int("nondomin__min_n_assets", 5, 25, step=5)
+    threshold = trial.suggest_float("nondomin__threshold", -0.5, -0.3, step=0.1)
+    corr_threshold = trial.suggest_float("correlate__threshold", 0.1, 0.4, step=0.1)
+    # 无序分类参数：fitness_measures 是筛选逻辑，不是目标函数
+    fm_name = trial.suggest_categorical("nondomin__fitness_measures", list(FITNESS_MEASURES))
+    fitness_measures = FITNESS_MEASURES[fm_name]
+
+    model = Pipeline([
+        ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("extremes", SelectKExtremes(k=200, measure=ExtraRiskMeasure.SKEW, highest=True)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=min_n_assets,
+            threshold=threshold,
+            fitness_measures=fitness_measures,
+        )),
+        ("correlate", DropCorrelated(threshold=corr_threshold)),
+        ("optimization", EqualWeighted()),
+    ])
+    pred = cross_val_predict(model, X, cv=cv, n_jobs=4)
+    return pred.annualized_mean
+
+
+========================================================================
+[2026-08-31 19:31:24] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 10, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.4, 'nondomin__fitness_measures': 'mean-mad-avgdd-cvar-sharpe'}
+
+========================================================================
+[2026-08-31 19:31:24] 最优得分
+========================================================================
+0.06311100886338032
+
+========================================================================
+[2026-08-31 19:34:12] OOS MPP Summary
+========================================================================
+Mean                                     0.025%
+Annualized Mean                           6.31%
+Variance                                0.0016%
+Annualized Variance                       0.39%
+Semi-Variance                          0.00079%
+Annualized Semi-Variance                  0.20%
+Standard Deviation                        0.39%
+Annualized Standard Deviation             6.26%
+Semi-Deviation                            0.28%
+Annualized Semi-Deviation                 4.45%
+Mean Absolute Deviation                   0.28%
+CVaR at 95%                               0.89%
+EVaR at 95%                               1.37%
+Worst Realization                         2.26%
+CDaR at 95%                               7.00%
+MAX Drawdown                             10.51%
+Average Drawdown                          2.27%
+EDaR at 95%                               7.88%
+First Lower Partial Moment                0.14%
+Ulcer Index                               0.029
+Gini Mean Difference                      0.41%
+Value at Risk at 95%                      0.57%
+Drawdown at Risk at 95%                   5.87%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000000%
+Fourth Lower Partial Moment           0.000000%
+Skew                                    -11.95%
+Kurtosis                                694.47%
+Sharpe Ratio                              0.063
+Annualized Sharpe Ratio                    1.01
+Sortino Ratio                             0.089
+Annualized Sortino Ratio                   1.42
+Mean Absolute Deviation Ratio             0.090
+First Lower Partial Moment Ratio           0.18
+Value at Risk Ratio at 95%                0.044
+CVaR Ratio at 95%                         0.028
+Entropic Risk Measure Ratio at 95%     0.000084
+EVaR Ratio at 95%                         0.018
+Worst Realization Ratio                   0.011
+Drawdown at Risk Ratio at 95%            0.0043
+CDaR Ratio at 95%                        0.0036
+Calmar Ratio                             0.0024
+Average Drawdown Ratio                    0.011
+EDaR Ratio at 95%                        0.0032
+Ulcer Index Ratio                        0.0086
+Gini Mean Difference Ratio                0.061
+Avg nb of Assets per Portfolio             14.2
+Number of Portfolios                         17
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-08-31 19:35:22] WalkForward 配置：Train/Test
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=126, train_size=504)
+
+========================================================================
+[2026-08-31 19:35:22] Objective配置
+========================================================================
+def objective(trial):
+    # 有序参数：让 TPE 感知数值距离
+    min_n_assets = trial.suggest_int("nondomin__min_n_assets", 5, 25, step=5)
+    threshold = trial.suggest_float("nondomin__threshold", -0.5, -0.3, step=0.1)
+    corr_threshold = trial.suggest_float("correlate__threshold", 0.1, 0.4, step=0.1)
+    # 无序分类参数：fitness_measures 是筛选逻辑，不是目标函数
+    fm_name = trial.suggest_categorical("nondomin__fitness_measures", list(FITNESS_MEASURES))
+    fitness_measures = FITNESS_MEASURES[fm_name]
+
+    model = Pipeline([
+        ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("extremes", SelectKExtremes(k=200, measure=ExtraRiskMeasure.KURTOSIS, highest=False)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=min_n_assets,
+            threshold=threshold,
+            fitness_measures=fitness_measures,
+        )),
+        ("correlate", DropCorrelated(threshold=corr_threshold)),
+        ("optimization", EqualWeighted()),
+    ])
+    pred = cross_val_predict(model, X, cv=cv, n_jobs=4)
+    return pred.annualized_mean
+
+
+========================================================================
+[2026-08-31 19:42:55] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 20, 'nondomin__threshold': -0.3, 'correlate__threshold': 0.2, 'nondomin__fitness_measures': 'mean-mad-maxdd-cvar-sharpe'}
+
+========================================================================
+[2026-08-31 19:42:55] 最优得分
+========================================================================
+0.15923742814909375
+
+========================================================================
+[2026-08-31 19:54:08] OOS MPP Summary
+========================================================================
+Mean                                     0.063%
+Annualized Mean                          15.92%
+Variance                                0.0063%
+Annualized Variance                       1.60%
+Semi-Variance                           0.0031%
+Annualized Semi-Variance                  0.79%
+Standard Deviation                        0.80%
+Annualized Standard Deviation            12.64%
+Semi-Deviation                            0.56%
+Annualized Semi-Deviation                 8.87%
+Mean Absolute Deviation                   0.54%
+CVaR at 95%                               1.82%
+EVaR at 95%                               3.24%
+Worst Realization                         6.29%
+CDaR at 95%                               9.62%
+MAX Drawdown                             12.11%
+Average Drawdown                          2.79%
+EDaR at 95%                              10.18%
+First Lower Partial Moment                0.27%
+Ulcer Index                               0.039
+Gini Mean Difference                      0.82%
+Value at Risk at 95%                      1.17%
+Drawdown at Risk at 95%                   8.43%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000003%
+Fourth Lower Partial Moment           0.000002%
+Skew                                     -8.73%
+Kurtosis                                757.60%
+Sharpe Ratio                              0.079
+Annualized Sharpe Ratio                    1.26
+Sortino Ratio                              0.11
+Annualized Sortino Ratio                   1.80
+Mean Absolute Deviation Ratio              0.12
+First Lower Partial Moment Ratio           0.23
+Value at Risk Ratio at 95%                0.054
+CVaR Ratio at 95%                         0.035
+Entropic Risk Measure Ratio at 95%      0.00021
+EVaR Ratio at 95%                         0.019
+Worst Realization Ratio                   0.010
+Drawdown at Risk Ratio at 95%            0.0075
+CDaR Ratio at 95%                        0.0066
+Calmar Ratio                             0.0052
+Average Drawdown Ratio                    0.023
+EDaR Ratio at 95%                        0.0062
+Ulcer Index Ratio                         0.016
+Gini Mean Difference Ratio                0.077
+Avg nb of Assets per Portfolio              4.8
+Number of Portfolios                         17
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-08-31 20:01:13] WalkForward 配置：Train/Test
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=126, train_size=504)
+
+========================================================================
+[2026-08-31 20:01:13] Objective配置
+========================================================================
+def objective(trial):
+    # 有序参数：让 TPE 感知数值距离
+    min_n_assets = trial.suggest_int("nondomin__min_n_assets", 5, 25, step=5)
+    threshold = trial.suggest_float("nondomin__threshold", -0.5, -0.3, step=0.1)
+    corr_threshold = trial.suggest_float("correlate__threshold", 0.1, 0.4, step=0.1)
+    # 无序分类参数：fitness_measures 是筛选逻辑，不是目标函数
+    fm_name = trial.suggest_categorical("nondomin__fitness_measures", list(FITNESS_MEASURES))
+    fitness_measures = FITNESS_MEASURES[fm_name]
+
+    model = Pipeline([
+        ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("extremes", SelectKExtremes(k=200, measure=ExtraRiskMeasure.KURTOSIS, highest=False)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=min_n_assets,
+            threshold=threshold,
+            fitness_measures=fitness_measures,
+        )),
+        ("correlate", DropCorrelated(threshold=corr_threshold)),
+        ("optimization", EqualWeighted()),
+    ])
+    pred = cross_val_predict(model, X, cv=cv, n_jobs=4)
+    return pred.annualized_sharpe_ratio
+
+
+========================================================================
+[2026-08-31 20:11:11] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 25, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.2, 'nondomin__fitness_measures': 'mean-mad-maxdd-cvar-sharpe'}
+
+========================================================================
+[2026-08-31 20:11:11] 最优得分
+========================================================================
+1.2189112892737923
+
+========================================================================
+[2026-08-31 20:14:15] OOS MPP Summary
+========================================================================
+Mean                                     0.059%
+Annualized Mean                          14.77%
+Variance                                0.0058%
+Annualized Variance                       1.47%
+Semi-Variance                           0.0029%
+Annualized Semi-Variance                  0.72%
+Standard Deviation                        0.76%
+Annualized Standard Deviation            12.11%
+Semi-Deviation                            0.53%
+Annualized Semi-Deviation                 8.49%
+Mean Absolute Deviation                   0.50%
+CVaR at 95%                               1.75%
+EVaR at 95%                               3.38%
+Worst Realization                         6.61%
+CDaR at 95%                               9.68%
+MAX Drawdown                             12.63%
+Average Drawdown                          2.69%
+EDaR at 95%                              10.39%
+First Lower Partial Moment                0.25%
+Ulcer Index                               0.038
+Gini Mean Difference                      0.77%
+Value at Risk at 95%                      1.09%
+Drawdown at Risk at 95%                   8.20%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000003%
+Fourth Lower Partial Moment           0.000002%
+Skew                                    -15.55%
+Kurtosis                                930.67%
+Sharpe Ratio                              0.077
+Annualized Sharpe Ratio                    1.22
+Sortino Ratio                              0.11
+Annualized Sortino Ratio                   1.74
+Mean Absolute Deviation Ratio              0.12
+First Lower Partial Moment Ratio           0.23
+Value at Risk Ratio at 95%                0.054
+CVaR Ratio at 95%                         0.033
+Entropic Risk Measure Ratio at 95%      0.00020
+EVaR Ratio at 95%                         0.017
+Worst Realization Ratio                  0.0089
+Drawdown at Risk Ratio at 95%            0.0071
+CDaR Ratio at 95%                        0.0061
+Calmar Ratio                             0.0046
+Average Drawdown Ratio                    0.022
+EDaR Ratio at 95%                        0.0056
+Ulcer Index Ratio                         0.015
+Gini Mean Difference Ratio                0.076
+Avg nb of Assets per Portfolio              5.4
+Number of Portfolios                         17
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
