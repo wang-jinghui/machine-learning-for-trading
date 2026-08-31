@@ -7,11 +7,14 @@
 
 用法（在 lazy_trading 目录下的任一 notebook 中）：
 
-    from log_result import init_logger, log_result, log_print, read_log
+    from log_result import init_logger, log_result, log_print, read_log, set_log_echo
 
     init_logger("WalkForward+CPCV+PS")                        # 只初始化一次, 绑定文件名
     log_result(median_tbl, section="2.1 核心指标中位数")       # DataFrame 结果落盘
-    log_print(f"沪深300 年化收益: {ann:.2%}", section="4.3 基准统计")  # print 同时落盘
+    log_print(f"沪深300 年化收益: {ann:.2%}", section="4.3 基准统计")  # 打印并落盘
+    set_log_echo(False)                                       # 关闭控制台打印, 仅落盘
+    log_print("批量结果…", section="4.4 批量")                 # 只写日志, 不打印
+    set_log_echo(True)                                        # 恢复打印
     print(read_log())                                          # 读全部日志
 
 不调用 init_logger 时, log_result 会尝试自动推断 notebook 名
@@ -30,6 +33,7 @@ from pathlib import Path
 _LOG_DIR = Path(__file__).resolve().parent / "logs"
 _SEP = "=" * 72
 _STEM: str | None = None   # 已绑定（初始化或自动推断缓存）的 notebook 名
+_ECHO = True               # log_print 控制台打印全局开关（set_log_echo 可改）
 
 
 def _detect_notebook_stem() -> str | None:
@@ -86,7 +90,7 @@ def init_logger(nb_stem: str | None = None, log_dir=None) -> Path:
 
     Returns
     -------
-    Path : 日志文件路径
+    Path : 日志文件路径（绑定后打印一次，后续调用不再输出）
     """
     stem = _get_stem(nb_stem)
     log_path = (Path(log_dir) if log_dir else _LOG_DIR) / f"{stem}.log"
@@ -95,7 +99,22 @@ def init_logger(nb_stem: str | None = None, log_dir=None) -> Path:
     return log_path
 
 
-def log_result(df, section="", mode="a", nb_stem=None, log_dir=None) -> Path:
+def set_log_echo(enabled: bool) -> None:
+    """设置 log_print 是否同时在控制台打印（默认 True）。
+
+    关闭后 log_print 只写日志、不打印（适合批量落盘时避免刷屏）；
+    单次调用可用 log_print(..., echo=...) 临时覆盖，不改变全局状态。
+
+    Parameters
+    ----------
+    enabled : bool
+        True 打印并落盘 / False 仅落盘
+    """
+    global _ECHO
+    _ECHO = bool(enabled)
+
+
+def log_result(df, section="", mode="a", nb_stem=None, log_dir=None) -> None:
     """把 DataFrame/Series 指标结果写入日志（与 notebook 同名，带时间戳）。
 
     Parameters
@@ -114,7 +133,7 @@ def log_result(df, section="", mode="a", nb_stem=None, log_dir=None) -> Path:
 
     Returns
     -------
-    Path : 日志文件路径
+    None : 只落盘不返回；日志路径在 init_logger 时已打印
     """
     nb_stem = _get_stem(nb_stem)
 
@@ -128,13 +147,12 @@ def log_result(df, section="", mode="a", nb_stem=None, log_dir=None) -> Path:
     with open(log_path, mode, encoding="utf-8") as f:
         f.write(record)
 
-    return log_path
 
+def log_print(*args, section="", sep=" ", end="\n", mode="a", nb_stem=None, log_dir=None,
+              echo=None) -> None:
+    """把内容写入日志，控制台是否打印由 echo 控制（默认跟随 set_log_echo 全局开关）。
 
-def log_print(*args, section="", sep=" ", end="\n", mode="a", nb_stem=None, log_dir=None) -> Path:
-    """把 print 内容同时写入日志并在控制台照常打印。
-
-    等价于 print(*args, sep=sep, end=end) 后再把文本写入日志，
+    等价于 echo=True 时的 print(*args, sep=sep, end=end) + 落盘；
     适合记录基准统计、换手率等零散输出。
 
     Parameters
@@ -147,14 +165,19 @@ def log_print(*args, section="", sep=" ", end="\n", mode="a", nb_stem=None, log_
         同 print
     mode, nb_stem, log_dir
         同 log_result
+    echo : bool | None
+        True 打印并落盘 / False 仅落盘；None（默认）跟随 set_log_echo 全局开关
 
     Returns
     -------
-    Path : 日志文件路径
+    None : 只落盘不返回；日志路径在 init_logger 时已打印
     """
-    print(*args, sep=sep, end=end)
+    if echo is None:
+        echo = _ECHO
+    if echo:
+        print(*args, sep=sep, end=end)
     text = sep.join(str(a) for a in args)
-    return log_result(text, section=section, mode=mode, nb_stem=nb_stem, log_dir=log_dir)
+    log_result(text, section=section, mode=mode, nb_stem=nb_stem, log_dir=log_dir)
 
 
 def read_log(nb_stem=None, log_dir=None) -> str:
