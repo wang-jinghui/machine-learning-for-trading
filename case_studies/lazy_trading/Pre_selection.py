@@ -1,8 +1,10 @@
-"""Pre-selection DropTailCorrelated module.
+"""Pre-selection module: 资产预筛选转换器集合。
 
-基于尾部风险相关性的资产预筛选转换器，实现思路参考 skfolio 的
-DropCorrelated（三步贪心剔除框架），将全样本相关性替换为"单边条件
-尾部联动指标"（尾部依赖系数或条件尾部相关）。
+* DropTailCorrelated：基于尾部风险相关性的冗余剔除，实现思路参考
+  skfolio 的 DropCorrelated（三步贪心剔除框架），将全样本相关性替换
+  为"单边条件尾部联动指标"（尾部依赖系数或条件尾部相关）。
+* VolumePreSelection：基于平均成交量的流动性预筛选，按成交量保留
+  流动性最好的资产（需额外传入 volumes，见类文档）。
 """
 
 from __future__ import annotations
@@ -199,6 +201,121 @@ class DropTailCorrelated(skf.SelectorMixin, skb.BaseEstimator):
                 else:
                     to_remove.add(j)
         self.to_keep_ = ~np.isin(np.arange(n_assets), list(to_remove))
+        return self
+
+    def _get_support_mask(self):
+        skv.check_is_fitted(self)
+        return self.to_keep_
+
+
+class VolumePreSelection(skf.SelectorMixin, skb.BaseEstimator):
+    """按平均成交量保留流动性最好的资产（流动性预筛选）。
+
+    业务目标：在组合构建前剔除流动性差的资产，降低交易成本与冲击
+    成本的影响。对每只资产计算全样本平均成交量，保留成交量最高的
+    前 `pct_to_keep` 比例的资产。
+
+    注意：本选择器需要额外的成交量输入 `volumes`，而普通 `Pipeline.fit`
+    只会传递 X 与 y，因此 `model.fit(X)` 场景下无法拿到 volumes。
+    两种可用方式：
+
+    1) skfolio 的 cross_val_predict（官方推荐）：启用 metadata routing
+       后 volumes 作为路由参数传入，且按每折 train 索引自动切片：
+
+           set_config(enable_metadata_routing=True)
+           pipe = Pipeline([
+               ("pre_selection", VolumePreSelection(pct_to_keep=0.5)
+                                 .set_fit_request(volumes=True)),
+               ("optimization", EqualWeighted()),
+           ])
+           cross_val_predict(pipe, X, cv=cv, params={"volumes": volumes})
+
+       volumes 须与全量 X 同形状（行数 = 总观测数）；skfolio 0.20 的
+       该通道不支持 callable 值（会直接访问 .shape 报错）。
+
+    2) 两段式手动 fit（方案B 等普通 fit 场景）：先 fit 再 transform
+
+           sel = VolumePreSelection(pct_to_keep=0.5)
+           sel.fit(X_window, volumes=volumes_window)   # 按窗口手动对齐
+           X_sel = sel.transform(X_window)
+
+    Parameters
+    ----------
+    pct_to_keep : float, default=0.5
+        保留比例，取值 (0, 1]。例如 0.5 表示保留平均成交量最高的 50%
+        资产；比例折算不足 1 只时至少保留 1 只。
+
+    Attributes
+    ----------
+    to_keep_ : BoolArray of shape (n_assets,)
+        布尔数组，True 表示该资产被保留。
+
+    n_features_in_ : int
+        fit 时观测到的资产数量。
+
+    feature_names_in_ : ndarray of shape (`n_features_in_`,)
+        fit 时观测到的资产名称，仅当 X 的列名全为字符串时定义。
+    """
+
+    to_keep_: BoolArray
+
+    def __init__(self, pct_to_keep: float = 0.5):
+        self.pct_to_keep = pct_to_keep
+
+    def _validate_params(self) -> None:
+        if not 0 < self.pct_to_keep <= 1:
+            raise ValueError("`pct_to_keep` must be between 0 and 1 (exclusive of 0)")
+
+    def fit(self, X: ArrayLike, y=None, volumes: ArrayLike | None = None):
+        """按平均成交量运行流动性筛选，得到应保留的资产。
+
+        Parameters
+        ----------
+        X : array-like of shape (n_observations, n_assets)
+            资产收益率（仅用于对齐资产维度与数量）。
+
+        y : Ignored
+            未使用，仅为保持 API 一致性。
+
+        volumes : array-like of shape (n_observations, n_assets), optional
+            与 X 同形状的成交量数据（如日成交量/成交额），必填。
+
+        Returns
+        -------
+        self : VolumePreSelection
+            已拟合的转换器。
+        """
+        X = skv.validate_data(self, X)
+        self._validate_params()
+
+        if volumes is None:
+            raise ValueError("`volumes` is required: pass an array of shape X.shape")
+
+        # Validate and convert volumes to a NumPy array
+        volumes = skv.check_array(
+            volumes,
+            accept_sparse=False,
+            ensure_2d=False,
+            dtype=[np.float64, np.float32],
+            order="C",
+            copy=False,
+            input_name="volumes",
+        )
+        if volumes.shape != X.shape:
+            raise ValueError(
+                f"Volume data {volumes.shape} must have the same dimensions as X {X.shape}"
+            )
+
+        n_assets = X.shape[1]
+        mean_volumes = volumes.mean(axis=0)
+
+        # Select the top `pct_to_keep` assets with the highest average volumes
+        n_to_keep = max(1, int(round(self.pct_to_keep * n_assets)))
+        selected_idx = np.argsort(mean_volumes)[-n_to_keep:]
+
+        # Performance tip: `argpartition` could be used here for better efficiency
+        # (O(n log(n)) vs O(n)).
+        self.to_keep_ = np.isin(np.arange(n_assets), selected_idx)
         return self
 
     def _get_support_mask(self):
