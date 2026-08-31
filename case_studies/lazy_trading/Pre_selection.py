@@ -5,16 +5,142 @@
   为"单边条件尾部联动指标"（尾部依赖系数或条件尾部相关）。
 * VolumePreSelection：基于平均成交量的流动性预筛选，按成交量保留
   流动性最好的资产（需额外传入 volumes，见类文档）。
+* SelectKExtremes：按指定度量值保留 k 个最优或最差资产，k 支持
+  整数数量或浮点比例（增强自 skfolio 的 SelectKExtremes）。
 """
 
 from __future__ import annotations
+
+import numbers
 
 import numpy as np
 import sklearn.base as skb
 import sklearn.feature_selection as skf
 import sklearn.utils.validation as skv
 
+from skfolio.measures import RatioMeasure
+from skfolio.population import Population
+from skfolio.portfolio import Portfolio
 from skfolio.typing import ArrayLike, BoolArray
+
+import skfolio.typing as skt
+
+
+class SelectKExtremes(skf.SelectorMixin, skb.BaseEstimator):
+    """按指定度量值保留 k 个最优或最差资产（增强自 skfolio 的 SelectKExtremes）。
+
+    业务目标：在组合构建前根据单一风险/收益度量（夏普比率、峰度、
+    波动率等）缩小资产宇宙，保留度量值最高（highest=True）或最低
+    （highest=False）的 k 个资产。
+
+    k 参数增强（相对 skfolio 原版）：
+
+        * k 为整数：直接作为保留数量，与原版语义一致；
+        * k 为浮点且 0 < k < 1：视为保留比例，fit 时按输入资产数
+          自动折算：k_actual = round(k * n_assets)，折算不足 1 只时
+          至少保留 1 只（便于在资产数不固定的场景下使用比例筛选）；
+        * k 为浮点且 k >= 1：按数量取整处理（与整数语义一致，避免
+          将 200.0 误当作 20000% 比例导致意外全选）。
+
+    与 skfolio 一致：解析后的 k 大于等于资产数量时，全部资产保留。
+
+    Parameters
+    ----------
+    k : int or float, default=10
+        保留数量（整数）或保留比例（浮点且 0 < k < 1）。
+
+    measure : Measure, default=RatioMeasure.SHARPE_RATIO
+        用于排序资产的 skfolio 度量，如 RatioMeasure.SHARPE_RATIO、
+        ExtraRiskMeasure.KURTOSIS 等。
+
+    highest : bool, default=True
+        True 时保留度量值最高的 k 个资产，否则保留最低的 k 个。
+
+    Attributes
+    ----------
+    to_keep_ : BoolArray of shape (n_assets,)
+        布尔数组，True 表示该资产被保留。
+
+    n_features_in_ : int
+        fit 时观测到的资产数量。
+
+    feature_names_in_ : ndarray of shape (`n_features_in_`,)
+        fit 时观测到的资产名称，仅当 X 的列名全为字符串时定义。
+    """
+
+    to_keep_: BoolArray
+
+    def __init__(
+        self,
+        k: int | float = 10,
+        measure: skt.Measure = RatioMeasure.SHARPE_RATIO,
+        highest: bool = True,
+    ):
+        self.k = k
+        self.measure = measure
+        self.highest = highest
+
+    def _validate_params(self) -> None:
+        if not isinstance(self.k, (numbers.Integral, numbers.Real)):
+            raise ValueError("`k` must be an int (count) or a float (ratio)")
+        if self.k <= 0:
+            raise ValueError("`k` must be strictly positive")
+
+    def _resolve_k(self, n_assets: int) -> int:
+        """把 k 解析为实际保留数量：整数直接用，浮点比例折算。"""
+        if isinstance(self.k, numbers.Integral):
+            k = int(self.k)
+        else:
+            k = float(self.k)
+            if 0 < k < 1:
+                k = max(1, int(round(k * n_assets)))
+            else:
+                k = int(k)
+        return min(k, n_assets)
+
+    def fit(self, X: ArrayLike, y=None) -> SelectKExtremes:
+        """运行 SelectKExtremes 筛选，得到应保留的资产。
+
+        Parameters
+        ----------
+        X : array-like of shape (n_observations, n_assets)
+            资产收益率。
+
+        y : Ignored
+            未使用，仅为保持 API 一致性。
+
+        Returns
+        -------
+        self : SelectKExtremes
+            已拟合的转换器。
+        """
+        X = skv.validate_data(self, X)
+        self._validate_params()
+        n_assets = X.shape[1]
+        k = self._resolve_k(n_assets)
+
+        # k 达到或超过资产总数时直接全选，避免无谓的度量计算
+        if k >= n_assets:
+            self.to_keep_ = np.ones(n_assets, dtype=bool)
+            return self
+
+        # 构建单资产组合 Population，按 measure 排序取前 k 个
+        population = Population([])
+        for i in range(n_assets):
+            weights = np.zeros(n_assets)
+            weights[i] = 1
+            population.append(Portfolio(X=X, weights=weights))
+
+        selected = population.sort_measure(
+            measure=self.measure, reverse=self.highest
+        )[:k]
+        selected_idx = [x.nonzero_assets_index[0] for x in selected]
+        self.to_keep_ = np.isin(np.arange(n_assets), selected_idx)
+        return self
+
+    def _get_support_mask(self):
+        skv.check_is_fitted(self)
+        return self.to_keep_
 
 
 class DropTailCorrelated(skf.SelectorMixin, skb.BaseEstimator):
