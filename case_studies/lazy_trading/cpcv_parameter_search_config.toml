@@ -1,0 +1,53 @@
+# CPCV 嵌套自适应搜索配置（wf_cpcv_search.py 消费）
+#
+# 架构：cpcv_parameter_search 是 walkforward_parameter_search 的嵌套变体——
+# 同一套 pipeline 与参数空间，只增加 train_size 搜索维度。工作流：
+#   WF 全局搜索（parameter_search_config.toml）易过拟合，只用于探测想法、
+#   收敛参数范围；最终必须把**同一份 [param_space]**（复制至此并收敛）
+#   通过 WF+CPCV 嵌套做绝对样本外验证。
+#
+# [param_space] 与 parameter_search_config.toml 逐键同构（5 键全量参与
+#   嵌套搜索，含 extremes__k）；fitness_measures 名称体系同注册表。
+# [nested_space] 是唯一增量：内层训练子窗口 train_size。
+
+[param_space]
+# 筛选参数（与 WF 探索同一套键，逐键同构；嵌套每折在收敛范围内重新搜索）
+"nondomin__min_n_assets" = { low = 5, high = 25, step = 5 }
+"nondomin__threshold" = { low = -0.5, high = -0.3, step = 0.1 }
+"correlate__threshold" = { low = 0.1, high = 0.5, step = 0.1 }
+"extremes__k" = { low = 0.1, high = 0.5, step = 0.1 }
+"nondomin__fitness_measures" = [
+    "mean-variance",
+    "mean-variance-maxdd",
+    "mean-variance-avgdd",
+    "mean-semideviation-avgdd",
+    "mean-mad-maxdd",
+    "mean-mad-avgdd",
+    "mean-mad-maxdd-cvar",
+    "mean-mad-maxdd-cvar-sharpe",
+    "mean-mad-avgdd-cvar",
+    "mean-mad-avgdd-cvar-sharpe",
+]
+
+[cpcv]
+# 外层 WalkForward（嵌套搜索 outer loop；两阶段共用同一窗口配置，
+# 保证 fold 索引对齐——reduce_test 差异只影响尾段是否参与，不影响对齐）
+outer_test_size = 126          # 半季
+outer_train_size = 630         # 252 * 2.5
+outer_purged_size = 1
+# 两阶段 reduce_test 各自独立（notebook 原语义）：
+# 搜索 True → 不足 test_size 的尾段缩短保留并照常搜参（尾折参数仅供记录）；
+# 压测 False → 不产出不完整尾段，尾折参数自然不被使用
+outer_reduce_test = true       # 搜索阶段（nested_adaptive_search）
+paths_reduce_test = false      # 压测阶段（adaptive_multi_paths）
+# 内层 CPCV
+n_test_folds = 2
+# 每折内层 Optuna
+n_trials = 100                 # 每折 trial 数（约 15 折 × 100 trials，耗时长）
+n_jobs = 12
+seed = 42
+verbose = true
+
+[nested_space]
+# 内层训练子窗口（唯一"嵌套独有"搜索维度：WF 探索无此维度）
+"train_size" = { low = 252, high = 504, step = 126 }   # 1~2 年，上限 ≤ 外层train - test
