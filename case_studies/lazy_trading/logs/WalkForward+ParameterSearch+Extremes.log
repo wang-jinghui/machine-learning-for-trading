@@ -3223,3 +3223,306 @@ Number of Portfolios                         29
 Number of Failed Portfolios                   0
 Number of Fallback Portfolios                 0
 dtype: str
+
+========================================================================
+[2026-09-02 14:53:25] 数据加载
+========================================================================
+数据加载完成: hs_funds_prices.parquet | 行数=2578 资产数=2112 | inf列=[] | 剔除异常列 X=3 X_net=3
+
+========================================================================
+[2026-09-02 14:53:25] 实验配置
+========================================================================
+数据: X（行数=2578） | 搜索方式: optuna（auto 依据: 网格规模 3750） | 目标函数: asr_mdd_skew
+
+========================================================================
+[2026-09-02 14:53:25] WalkForward 配置
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=63, train_size=756)
+
+========================================================================
+[2026-09-02 14:53:25] 参数空间
+========================================================================
+
+  nondomin__min_n_assets = range[5, 25] step=5
+  nondomin__threshold = range[-0.5, -0.3] step=0.1
+  correlate__threshold = range[0.1, 0.5] step=0.1
+  extremes__k = range[0.1, 0.5] step=0.1
+  nondomin__fitness_measures = choice['mean-variance', 'mean-variance-maxdd', 'mean-variance-avgdd', 'mean-semideviation-avgdd', 'mean-mad-maxdd', 'mean-mad-avgdd', 'mean-mad-maxdd-cvar', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar', 'mean-mad-avgdd-cvar-sharpe']
+网格规模 = 3750
+
+========================================================================
+[2026-09-02 14:53:25] 目标函数: asr_mdd_skew
+========================================================================
+def objective_asr_mdd_skew(pred):
+    """年化夏普 − 最大回撤 + 偏度（偏度自带符号：负偏惩罚、正偏奖励）"""
+    return pred.annualized_sharpe_ratio - pred.max_drawdown + pred.skew
+
+
+========================================================================
+[2026-09-02 15:06:44] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 15, 'nondomin__threshold': -0.3, 'correlate__threshold': 0.4, 'extremes__k': 0.4, 'nondomin__fitness_measures': 'mean-mad-avgdd-cvar-sharpe'}
+
+========================================================================
+[2026-09-02 15:06:44] 最优得分
+========================================================================
+0.880491
+
+========================================================================
+[2026-09-02 15:06:50] OOS MPP Summary
+========================================================================
+Mean                                     0.054%
+Annualized Mean                          13.64%
+Variance                                0.0044%
+Annualized Variance                       1.12%
+Semi-Variance                           0.0023%
+Annualized Semi-Variance                  0.58%
+Standard Deviation                        0.67%
+Annualized Standard Deviation            10.58%
+Semi-Deviation                            0.48%
+Annualized Semi-Deviation                 7.62%
+Mean Absolute Deviation                   0.47%
+CVaR at 95%                               1.56%
+EVaR at 95%                               2.14%
+Worst Realization                         3.26%
+CDaR at 95%                              11.62%
+MAX Drawdown                             16.53%
+Average Drawdown                          3.70%
+EDaR at 95%                              13.17%
+First Lower Partial Moment                0.24%
+Ulcer Index                               0.051
+Gini Mean Difference                      0.70%
+Value at Risk at 95%                      0.98%
+Drawdown at Risk at 95%                  10.09%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000001%
+Fourth Lower Partial Moment           0.000001%
+Skew                                    -24.33%
+Kurtosis                                592.90%
+Sharpe Ratio                              0.081
+Annualized Sharpe Ratio                    1.29
+Sortino Ratio                              0.11
+Annualized Sortino Ratio                   1.79
+Mean Absolute Deviation Ratio              0.11
+First Lower Partial Moment Ratio           0.23
+Value at Risk Ratio at 95%                0.055
+CVaR Ratio at 95%                         0.035
+Entropic Risk Measure Ratio at 95%      0.00018
+EVaR Ratio at 95%                         0.025
+Worst Realization Ratio                   0.017
+Drawdown at Risk Ratio at 95%            0.0054
+CDaR Ratio at 95%                        0.0047
+Calmar Ratio                             0.0033
+Average Drawdown Ratio                    0.015
+EDaR Ratio at 95%                        0.0041
+Ulcer Index Ratio                         0.011
+Gini Mean Difference Ratio                0.077
+Avg nb of Assets per Portfolio              7.0
+Number of Portfolios                         29
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-09-02 15:13:55] 数据加载
+========================================================================
+数据加载完成: hs_funds_prices.parquet | 行数=2578 资产数=2112 | inf列=[] | 剔除异常列 X=3 X_net=3
+
+========================================================================
+[2026-09-02 15:13:55] 实验配置
+========================================================================
+数据: X（行数=2578） | 搜索方式: optuna（auto 依据: 网格规模 3750） | 目标函数: asr_mdd_skew
+
+========================================================================
+[2026-09-02 15:13:55] WalkForward 配置
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=63, train_size=504)
+
+========================================================================
+[2026-09-02 15:13:55] 参数空间
+========================================================================
+
+  nondomin__min_n_assets = range[5, 25] step=5
+  nondomin__threshold = range[-0.5, -0.3] step=0.1
+  correlate__threshold = range[0.1, 0.5] step=0.1
+  extremes__k = range[0.1, 0.5] step=0.1
+  nondomin__fitness_measures = choice['mean-variance', 'mean-variance-maxdd', 'mean-variance-avgdd', 'mean-semideviation-avgdd', 'mean-mad-maxdd', 'mean-mad-avgdd', 'mean-mad-maxdd-cvar', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar', 'mean-mad-avgdd-cvar-sharpe']
+网格规模 = 3750
+
+========================================================================
+[2026-09-02 15:13:55] 目标函数: asr_mdd_skew
+========================================================================
+def objective_asr_mdd_skew(pred):
+    """年化夏普 − 最大回撤 + 偏度（偏度自带符号：负偏惩罚、正偏奖励）"""
+    return pred.annualized_sharpe_ratio - pred.max_drawdown + pred.skew
+
+
+========================================================================
+[2026-09-02 15:29:55] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 15, 'nondomin__threshold': -0.3, 'correlate__threshold': 0.2, 'extremes__k': 0.5, 'nondomin__fitness_measures': 'mean-mad-avgdd-cvar-sharpe'}
+
+========================================================================
+[2026-09-02 15:29:55] 最优得分
+========================================================================
+1.385762
+
+========================================================================
+[2026-09-02 15:30:04] OOS MPP Summary
+========================================================================
+Mean                                     0.046%
+Annualized Mean                          11.70%
+Variance                                0.0040%
+Annualized Variance                       1.00%
+Semi-Variance                           0.0019%
+Annualized Semi-Variance                  0.48%
+Standard Deviation                        0.63%
+Annualized Standard Deviation            10.00%
+Semi-Deviation                            0.44%
+Annualized Semi-Deviation                 6.92%
+Mean Absolute Deviation                   0.41%
+CVaR at 95%                               1.43%
+EVaR at 95%                               2.31%
+Worst Realization                         4.20%
+CDaR at 95%                              10.62%
+MAX Drawdown                             13.87%
+Average Drawdown                          2.72%
+EDaR at 95%                              11.57%
+First Lower Partial Moment                0.21%
+Ulcer Index                               0.041
+Gini Mean Difference                      0.63%
+Value at Risk at 95%                      0.92%
+Drawdown at Risk at 95%                   9.42%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000002%
+Fourth Lower Partial Moment           0.000001%
+Skew                                     35.53%
+Kurtosis                               1094.45%
+Sharpe Ratio                              0.074
+Annualized Sharpe Ratio                    1.17
+Sortino Ratio                              0.11
+Annualized Sortino Ratio                   1.69
+Mean Absolute Deviation Ratio              0.11
+First Lower Partial Moment Ratio           0.23
+Value at Risk Ratio at 95%                0.051
+CVaR Ratio at 95%                         0.032
+Entropic Risk Measure Ratio at 95%      0.00015
+EVaR Ratio at 95%                         0.020
+Worst Realization Ratio                   0.011
+Drawdown at Risk Ratio at 95%            0.0049
+CDaR Ratio at 95%                        0.0044
+Calmar Ratio                             0.0033
+Average Drawdown Ratio                    0.017
+EDaR Ratio at 95%                        0.0040
+Ulcer Index Ratio                         0.011
+Gini Mean Difference Ratio                0.074
+Avg nb of Assets per Portfolio              4.0
+Number of Portfolios                         33
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-09-02 15:56:38] 数据加载
+========================================================================
+数据加载完成: hs_funds_prices.parquet | 行数=2578 资产数=2112 | inf列=[] | 剔除异常列 X=3 X_net=3
+
+========================================================================
+[2026-09-02 15:56:38] 实验配置
+========================================================================
+数据: X（行数=2578） | 搜索方式: optuna（auto 依据: 网格规模 3750） | 目标函数: asr_mdd_skew
+
+========================================================================
+[2026-09-02 15:56:38] WalkForward 配置
+========================================================================
+WalkForward(expand_train=False, expend_train=False, freq=None,
+      freq_offset=None, previous=False, purged_size=1, reduce_test=True,
+      test_size=63, train_size=252)
+
+========================================================================
+[2026-09-02 15:56:38] 参数空间
+========================================================================
+
+  nondomin__min_n_assets = range[5, 25] step=5
+  nondomin__threshold = range[-0.5, -0.3] step=0.1
+  correlate__threshold = range[0.1, 0.5] step=0.1
+  extremes__k = range[0.1, 0.5] step=0.1
+  nondomin__fitness_measures = choice['mean-variance', 'mean-variance-maxdd', 'mean-variance-avgdd', 'mean-semideviation-avgdd', 'mean-mad-maxdd', 'mean-mad-avgdd', 'mean-mad-maxdd-cvar', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar', 'mean-mad-avgdd-cvar-sharpe']
+网格规模 = 3750
+
+========================================================================
+[2026-09-02 15:56:38] 目标函数: asr_mdd_skew
+========================================================================
+def objective_asr_mdd_skew(pred):
+    """年化夏普 − 最大回撤 + 偏度（偏度自带符号：负偏惩罚、正偏奖励）"""
+    return pred.annualized_sharpe_ratio - pred.max_drawdown + pred.skew
+
+
+========================================================================
+[2026-09-02 16:15:21] 最优参数
+========================================================================
+{'nondomin__min_n_assets': 25, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.4, 'nondomin__fitness_measures': 'mean-mad-maxdd-cvar-sharpe'}
+
+========================================================================
+[2026-09-02 16:15:21] 最优得分
+========================================================================
+0.837523
+
+========================================================================
+[2026-09-02 16:15:29] OOS MPP Summary
+========================================================================
+Mean                                     0.042%
+Annualized Mean                          10.68%
+Variance                                0.0049%
+Annualized Variance                       1.23%
+Semi-Variance                           0.0024%
+Annualized Semi-Variance                  0.61%
+Standard Deviation                        0.70%
+Annualized Standard Deviation            11.10%
+Semi-Deviation                            0.49%
+Annualized Semi-Deviation                 7.81%
+Mean Absolute Deviation                   0.43%
+CVaR at 95%                               1.67%
+EVaR at 95%                               2.77%
+Worst Realization                         4.93%
+CDaR at 95%                              12.91%
+MAX Drawdown                             16.40%
+Average Drawdown                          3.25%
+EDaR at 95%                              13.99%
+First Lower Partial Moment                0.21%
+Ulcer Index                               0.048
+Gini Mean Difference                      0.67%
+Value at Risk at 95%                      0.94%
+Drawdown at Risk at 95%                  11.02%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000003%
+Fourth Lower Partial Moment           0.000001%
+Skew                                      3.94%
+Kurtosis                               1199.78%
+Sharpe Ratio                              0.061
+Annualized Sharpe Ratio                    0.96
+Sortino Ratio                             0.086
+Annualized Sortino Ratio                   1.37
+Mean Absolute Deviation Ratio             0.099
+First Lower Partial Moment Ratio           0.20
+Value at Risk Ratio at 95%                0.045
+CVaR Ratio at 95%                         0.025
+Entropic Risk Measure Ratio at 95%      0.00014
+EVaR Ratio at 95%                         0.015
+Worst Realization Ratio                  0.0086
+Drawdown at Risk Ratio at 95%            0.0038
+CDaR Ratio at 95%                        0.0033
+Calmar Ratio                             0.0026
+Average Drawdown Ratio                    0.013
+EDaR Ratio at 95%                        0.0030
+Ulcer Index Ratio                        0.0089
+Gini Mean Difference Ratio                0.063
+Avg nb of Assets per Portfolio              3.2
+Number of Portfolios                         37
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
