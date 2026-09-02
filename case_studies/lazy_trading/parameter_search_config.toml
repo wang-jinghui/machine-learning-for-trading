@@ -1,0 +1,46 @@
+# WalkForward + 参数搜索配置文件
+#
+# 用法: python walkforward_parameter_search.py --config parameter_search_config.toml
+# 三种搜索方式共用同一份参数空间定义:
+#   - range : { low = a, high = b, step = c }  连续区间（low/high/step 全为整数时按整数取值）
+#   - choice: 候选值列表（"nondomin__fitness_measures" 用名称引用脚本中的 FITNESS_MEASURES 注册表）
+# method 为 auto 时按网格规模自动选择: <=100 → grid, 100<size<=300 → random, >300 → optuna
+
+[search]
+method = "auto"            # auto | grid | random | optuna（auto 按参数空间规模自动选择）
+objective = "asr_mdd_skew"           # 目标函数注册名，见脚本 OBJECTIVES 注册表
+data = "X"             # X（原始收益）| X_net（去中性化超额收益）
+log_name = "WalkForward+ParameterSearch+Extremes"  # 日志文件名（logs/ 下，不含扩展名）；可用 --log-name 覆盖
+n_trials = 500             # optuna 最大 trial 数
+n_iter = 300               # random 采样次数
+patience = 100             # optuna 连续无有效改善提前停止阈值
+min_delta = 0.0001         # optuna 有效改善的最小增量
+n_jobs = 12                # 搜索器并行度（grid/random 并行参数组合，optuna 并行 trial）
+cv_n_jobs = 4              # optuna 单 trial 内 cross_val_predict 并行度
+seed = 42                  # optuna / random 随机种子
+verbose = 1                # sklearn 搜索器 verbose 等级
+
+[cv]
+test_size = 63             # 252 // 4
+train_size = 252           # 252 * 3
+purged_size = 1
+reduce_test = true
+expand_train = false
+
+[param_space]
+"nondomin__min_n_assets" = { low = 5, high = 25, step = 5 }
+"nondomin__threshold" = { low = -0.5, high = -0.3, step = 0.1 }
+"correlate__threshold" = { low = 0.1, high = 0.5, step = 0.1 }
+"extremes__k" = { low = 0.1, high = 0.5, step = 0.1 }
+"nondomin__fitness_measures" = [
+    "mean-variance",
+    "mean-variance-maxdd",
+    "mean-variance-avgdd",
+    "mean-semideviation-avgdd",
+    "mean-mad-maxdd",
+    "mean-mad-avgdd",
+    "mean-mad-maxdd-cvar",
+    "mean-mad-maxdd-cvar-sharpe",
+    "mean-mad-avgdd-cvar",
+    "mean-mad-avgdd-cvar-sharpe",
+]
