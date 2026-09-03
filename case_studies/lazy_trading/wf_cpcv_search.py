@@ -41,7 +41,9 @@
         "train_size": {"low": 252, "high": 504, "step": 126},
     }
     folds = nested_adaptive_search(X, test_size=126, train_size=630,
-                                   space=space, n_trials=100, n_jobs=12)
+                                   space=space, n_trials=100, n_jobs=12,
+                                   cv_n_jobs=4)   # n_jobs: optuna trial级并行;
+                                                   # cv_n_jobs: 单trial内CPCV并行
 """
 
 from __future__ import annotations
@@ -114,8 +116,11 @@ def load_nested_config(config_path=DEFAULT_CONFIG) -> dict:
         outer_purged_size=outer["purged_size"],
         outer_reduce_test=cpcv.get("outer_reduce_test", True),
         n_test_folds=cpcv.get("n_test_folds", 2),
-        n_jobs=cpcv.get("n_jobs", 4),
+        n_jobs=cpcv.get("n_jobs", 4),          # 内层 optuna trial 级并行
+        cv_n_jobs=cpcv.get("cv_n_jobs", 4),    # 单 trial 内 CPCV 并行
         n_trials=cpcv.get("n_trials", 40),
+        patience=cpcv.get("patience", 50),     # 早停：连续无有效改善 trial 数
+        min_delta=cpcv.get("min_delta", 1e-4), # 早停：有效改善的最小增量
         seed=cpcv.get("seed", 42),
         verbose=cpcv.get("verbose", True),
     )
@@ -125,6 +130,7 @@ def load_nested_config(config_path=DEFAULT_CONFIG) -> dict:
         outer_purged_size=outer["purged_size"],
         outer_reduce_test=cpcv.get("paths_reduce_test", False),
         n_test_folds=cpcv.get("n_test_folds", 2),
+        # 压测无 optuna trial 层：n_jobs 为单次 cross_val_predict 并行（单层，可直接拉满）
         n_jobs=cpcv.get("n_jobs", 4),
         verbose=cpcv.get("verbose", True),
     )
@@ -148,6 +154,13 @@ def inner_cpcv_score(X_tr, params, test_size, n_jobs=4, n_test_folds=2):
     params 为管道前缀键（含 nondomin__fitness_measures 名称或组合列表），
     与 walkforward build_pipeline 契约一致。
     """
+    # CPCV 组合路径无时序约束: test 块可整体早于 train 块, SelectComplete
+    # 的"首行检查"只覆盖 train 块首行(窗口深处) → 窗口起点后的上市前导
+    # NaN 会在早期 test 块漏出(optuna worker 无 pandas set_output 时
+    # DropZeroVariance 校验崩溃)。与 WF 顺序切分(结构性免疫)对齐的做法:
+    # 进 CPCV 前按窗口起点剔除未上市列——上市日为起点前的历史事实, 无泄漏;
+    # SelectComplete 仍逐路径执行, 幂等保留。
+    X_tr = X_tr.loc[:, X_tr.iloc[0].notna()]
     model = build_pipeline(params)
     block = max(1, test_size // n_test_folds)
     n_folds = max(n_test_folds + 1, len(X_tr) // block)
@@ -164,10 +177,17 @@ def inner_cpcv_score(X_tr, params, test_size, n_jobs=4, n_test_folds=2):
 # 内层 Optuna 搜索（TPE 采样，空间由 suggest_from_space 统一驱动）
 # ---------------------------------------------------------------------------
 def search_inner_params(X_tr, space, test_size, n_test_folds=2, n_jobs=4,
-                        n_trials=40, verbose=True, seed=42):
+                        cv_n_jobs=4, n_trials=40, patience=50, min_delta=1e-4,
+                        verbose=True, seed=42):
     """Optuna 搜索: 在 train_i 上用 TPE 优化 CPCV 路径分数, 返回该折最优参数。
 
     space : walkforward 同构参数空间（管道前缀键 + train_size 增量键）。
+    并行度分两层（与 walkforward run_optuna 对齐）：
+        n_jobs : optuna trial 级并行（study.optimize）
+        cv_n_jobs : 单 trial 内 CPCV cross_val_predict 并行
+    峰值并发 ≈ n_jobs × cv_n_jobs，预算需按机器核数控制。
+    patience / min_delta : StopWhenNoImprovement 早停参数（与 walkforward
+        run_optuna 同语义；内层 trial 预算小，默认 patience 比 wf 的 100 更敏感）
     Returns
     -------
     (best_params, best_value) : best_params 为 {键: 值}，fitness_measures
@@ -180,13 +200,14 @@ def search_inner_params(X_tr, space, test_size, n_test_folds=2, n_jobs=4,
         # 内层 CPCV 输入 = 训练 ts 天 + 测试 test_size 天(与外层 WF 结构一致);
         # ts 上限受约束(≤ 外层train-test_size), 保证 ts+test_size 不超出 X_tr
         w = X_tr.iloc[-(ts + test_size):]
-        return inner_cpcv_score(w, params, test_size, n_jobs=n_jobs, n_test_folds=n_test_folds)
+        return inner_cpcv_score(w, params, test_size, n_jobs=cv_n_jobs, n_test_folds=n_test_folds)
 
     study = optuna_study(seed=seed)
     study.optimize(objective,
                    n_trials=n_trials,
+                   n_jobs=n_jobs,
                    show_progress_bar=verbose,
-                   callbacks=[StopWhenNoImprovement(patience=50, min_delta=1e-4)])
+                   callbacks=[StopWhenNoImprovement(patience=patience, min_delta=min_delta)])
     if verbose:
         print(f"    best: {study.best_params} -> score={study.best_value:.4f}")
     return dict(study.best_params), study.best_value
@@ -202,13 +223,18 @@ def _outer_wf(X, test_size, train_size, purged_size, reduce_test):
 
 
 def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
-                           n_test_folds=2, n_jobs=4, n_trials=40, verbose=True,
-                           seed=42, outer_purged_size=1, outer_reduce_test=True):
+                           n_test_folds=2, n_jobs=4, cv_n_jobs=4, n_trials=40,
+                           patience=50, min_delta=1e-4, verbose=True, seed=42,
+                           outer_purged_size=1, outer_reduce_test=True):
     """方案B主循环: 外层WF滚动, 每折内层Optuna独立搜参, 该折参数预测纯净test段。
 
     参数说明（注意两个 train_size 同名不同义）：
         train_size : 外层 WalkForward 训练窗口（固定，天）
         space["train_size"] : 内层训练子窗口搜索维度（天，≤ 外层train-test_size）
+    并行度分两层（与 walkforward run_optuna 对齐）：
+        n_jobs : 内层 optuna trial 级并行
+        cv_n_jobs : 单 trial 内 CPCV cross_val_predict 并行
+    外层折间串行，峰值并发 ≈ n_jobs × cv_n_jobs。
     inner_cv 按训练子窗口动态构建（不外部传入）。
 
     NOTE: 搜索（默认 reduce_test=True）会把不足 test_size 的尾段缩短保留并
@@ -232,7 +258,9 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
         # 1) 内层搜索（只触碰训练块, test段保持纯净）
         best, score = search_inner_params(X_tr, space, test_size,
                                           n_test_folds=n_test_folds,
-                                          n_jobs=n_jobs, n_trials=n_trials,
+                                          n_jobs=n_jobs, cv_n_jobs=cv_n_jobs,
+                                          n_trials=n_trials,
+                                          patience=patience, min_delta=min_delta,
                                           verbose=verbose, seed=seed)
         # 2) 用该折最优参数重建模型, fit在训练子窗口, 直接predict纯净test段
         #    (Pipeline已含EqualWeighted最后一步, predict内部完成筛选+优化)
@@ -243,7 +271,7 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
         test_ptf.name = f"Fold{i}"   # predict 不接受 portfolio_params(0.20.x), 预测后设置名称
         folds.append({"fold": i, "params": best, "inner_median": score, "test": test_ptf})
         if verbose:
-            print(f"Fold {i}: best={best} | inner_median={score:.4f} | "
+            print(f"Fold {i}: inner_score={score:.4f} | "
                   f"test_ann={test_ptf.annualized_mean:.4f} | test_days={len(test_ptf.returns)}")
     return folds
 
@@ -255,6 +283,9 @@ def adaptive_multi_paths(X, folds, test_size=126, train_size=756,
 
     -> {fold: {path_id: [test块1, test块2, ...]}}; 窗口按该折train_size截断
     test两折为独立段(独立组合单元), 不拼成MPTF
+
+    并行度：无 optuna trial 层，n_jobs 为单次 cross_val_predict 并行
+    （与 inner_cpcv_score 同层，可按机器核数直接拉满）。
 
     NOTE: 默认 reduce_test=False → 不产出不足 test_size 的尾段，nested 搜索
     多出的尾折参数在此不会被使用（notebook 原语义）；fold 索引对齐只要求
@@ -271,6 +302,10 @@ def adaptive_multi_paths(X, folds, test_size=126, train_size=756,
         ts_len = p["train_size"]                        # N=最近N天
         w_idx = np.concatenate([tr_idx[-ts_len:], te_idx])
         window = X.iloc[w_idx]
+        # 与 inner_cpcv_score 同因: CPCV 组合路径下 SelectComplete 只查 train
+        # 块首行, 窗口起点的上市前导 NaN 会在早期 test 块漏出 → 按窗口起点
+        # 剔除未上市列(历史事实, 无泄漏; SelectComplete 幂等保留)。
+        window = window.loc[:, window.iloc[0].notna()]
         # 内层CPCV: 块长=test_size//n_test_folds, n_folds=窗口天数//块长
         # 使最后 n_test_folds 块恰好覆盖 test_size 天, 与内层搜索口径一致
         inner_cv = CombinatorialPurgedCV(n_folds=len(window) // (test_size // n_test_folds),
