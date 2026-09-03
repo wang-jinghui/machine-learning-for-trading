@@ -72,6 +72,7 @@ AUTO_RANDOM_MAX = 300
 FITNESS_MEASURES = {
     # MEAN + RiskMeasure 组合
     "mean-variance": [PerfMeasure.MEAN, RiskMeasure.VARIANCE],
+    "mean-semivariance-avgdd": [PerfMeasure.MEAN, RiskMeasure.SEMI_VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN],
     "mean-variance-maxdd": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.MAX_DRAWDOWN],
     "mean-variance-avgdd": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN],
     "mean-semideviation-avgdd": [PerfMeasure.MEAN, RiskMeasure.SEMI_DEVIATION, RiskMeasure.AVERAGE_DRAWDOWN],
