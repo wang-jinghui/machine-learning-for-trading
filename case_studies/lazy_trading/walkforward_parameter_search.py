@@ -72,10 +72,13 @@ AUTO_RANDOM_MAX = 300
 FITNESS_MEASURES = {
     # MEAN + RiskMeasure 组合
     "mean-variance": [PerfMeasure.MEAN, RiskMeasure.VARIANCE],
+    "mean-variance-cvar": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.CVAR],
     "mean-semivariance-avgdd": [PerfMeasure.MEAN, RiskMeasure.SEMI_VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN],
     "mean-variance-maxdd": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.MAX_DRAWDOWN],
     "mean-variance-avgdd": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN],
     "mean-semideviation-avgdd": [PerfMeasure.MEAN, RiskMeasure.SEMI_DEVIATION, RiskMeasure.AVERAGE_DRAWDOWN],
+    "mean-mad": [PerfMeasure.MEAN, RiskMeasure.MEAN_ABSOLUTE_DEVIATION],
+    "mean-mad-cvar": [PerfMeasure.MEAN, RiskMeasure.MEAN_ABSOLUTE_DEVIATION, RiskMeasure.CVAR],
     "mean-mad-maxdd": [PerfMeasure.MEAN, RiskMeasure.MEAN_ABSOLUTE_DEVIATION, RiskMeasure.MAX_DRAWDOWN],
     "mean-mad-avgdd": [PerfMeasure.MEAN, RiskMeasure.MEAN_ABSOLUTE_DEVIATION, RiskMeasure.AVERAGE_DRAWDOWN],
     "mean-mad-maxdd-cvar": [PerfMeasure.MEAN, RiskMeasure.MEAN_ABSOLUTE_DEVIATION, RiskMeasure.MAX_DRAWDOWN, RiskMeasure.CVAR],
@@ -323,7 +326,7 @@ def run_random(X, space, cv, objective_fn, n_iter=30, n_jobs=12, seed=42, verbos
 
 
 class StopWhenNoImprovement:
-    """Optuna 提前停止：连续 patience 次 trial 无有效改善（> min_delta）即停止。"""
+    """Optuna 提前停止：连续 patience 次 trial 无有效改善（> min_delta）即停止，静默不输出。"""
 
     def __init__(self, patience=20, min_delta=1e-4):
         self.patience = patience
@@ -342,7 +345,6 @@ class StopWhenNoImprovement:
         else:
             self.no_improve_count += 1
         if self.no_improve_count >= self.patience:
-            print(f"\n连续 {self.patience} 次 trial 无有效改善，提前停止。")
             study.stop()
 
 
