@@ -212,4 +212,5 @@ case_studies/*/catalog/*.json
 # Lazy trading parameter-search logs: canonical run logs stay tracked (overrides *.log)
 !/case_studies/lazy_trading/logs/WalkForward+ParameterSearch.log
 !/case_studies/lazy_trading/logs/WalkForward+ParameterSearch+Extremes.log
-
+!/case_studies/lazy_trading/logs/WF_CPCV_PS_126.log
+!/case_studies/lazy_trading/logs/WF_CPCV_PS_252.log
