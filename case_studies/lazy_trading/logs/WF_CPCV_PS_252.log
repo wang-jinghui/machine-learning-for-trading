@@ -1,0 +1,90 @@
+
+========================================================================
+[2026-09-04 14:17:08] Ojective
+========================================================================
+ASR - MDD + SKEW
+
+========================================================================
+[2026-09-04 14:17:34] Parameter Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 10, 'high': 25, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.5, 'step': 0.1}, 'extremes__k': {'low': 0.1, 'high': 0.5, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance', 'mean-variance-maxdd', 'mean-variance-avgdd', 'mean-semideviation-avgdd', 'mean-mad-maxdd', 'mean-mad-avgdd', 'mean-mad-maxdd-cvar', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar', 'mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 252, 'high': 756, 'step': 126}}
+
+========================================================================
+[2026-09-04 15:17:28] Best Parameter
+========================================================================
+   fold  inner_median  nondomin__min_n_assets  nondomin__threshold  correlate__threshold  extremes__k  train_size              fitness
+0     0        1.5840                      20                 -0.4                   0.2          0.5         252  mean-mad-avgdd-cvar
+1     1        1.6135                      20                 -0.4                   0.4          0.5         252       mean-mad-maxdd
+2     2        0.7755                      20                 -0.3                   0.1          0.3         252       mean-mad-avgdd
+3     3        0.6898                      15                 -0.5                   0.2          0.5         504  mean-mad-maxdd-cvar
+4     4        0.8799                      25                 -0.5                   0.1          0.5         378  mean-variance-maxdd
+5     5        1.3622                      20                 -0.5                   0.1          0.1         378  mean-mad-maxdd-cvar
+
+========================================================================
+[2026-09-04 15:19:13] OSS Summary
+========================================================================
+Mean                                     0.034%
+Annualized Mean                           8.54%
+Variance                                0.0021%
+Annualized Variance                       0.54%
+Semi-Variance                           0.0011%
+Annualized Semi-Variance                  0.28%
+Standard Deviation                        0.46%
+Annualized Standard Deviation             7.32%
+Semi-Deviation                            0.33%
+Annualized Semi-Deviation                 5.27%
+Mean Absolute Deviation                   0.33%
+CVaR at 95%                               1.04%
+EVaR at 95%                               1.85%
+Worst Realization                         3.27%
+CDaR at 95%                               7.05%
+MAX Drawdown                              9.30%
+Average Drawdown                          1.97%
+EDaR at 95%                               7.72%
+First Lower Partial Moment                0.16%
+Ulcer Index                               0.028
+Gini Mean Difference                      0.49%
+Value at Risk at 95%                      0.66%
+Drawdown at Risk at 95%                   6.08%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000000%
+Fourth Lower Partial Moment           0.000000%
+Skew                                    -33.64%
+Kurtosis                                746.58%
+Sharpe Ratio                              0.073
+Annualized Sharpe Ratio                    1.17
+Sortino Ratio                              0.10
+Annualized Sortino Ratio                   1.62
+Mean Absolute Deviation Ratio              0.10
+First Lower Partial Moment Ratio           0.21
+Value at Risk Ratio at 95%                0.052
+CVaR Ratio at 95%                         0.032
+Entropic Risk Measure Ratio at 95%      0.00011
+EVaR Ratio at 95%                         0.018
+Worst Realization Ratio                   0.010
+Drawdown at Risk Ratio at 95%            0.0056
+CDaR Ratio at 95%                        0.0048
+Calmar Ratio                             0.0036
+Average Drawdown Ratio                    0.017
+EDaR Ratio at 95%                        0.0044
+Ulcer Index Ratio                         0.012
+Gini Mean Difference Ratio                0.069
+Avg nb of Assets per Portfolio              4.5
+Number of Portfolios                          6
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-09-04 15:36:43] OSS DSR Diagnose
+========================================================================
+{'prob_loss': np.float64(0.002), 'dsr': np.float64(1.0), 'sr_obs': np.float64(0.7682386504081783), 'e_max': 0.0, 'z_score': np.float64(21.23815183155358), 'T_total': 1512, 'n_trials': 1}
+
+========================================================================
+[2026-09-04 17:03:54] 4.2 A3 vs 沪深300 相对收益分布
+========================================================================
+      ann_excess  arith_excess      IR  winrate
+5%        0.0030       -0.0094 -0.0620   0.5093
+50%       0.0400        0.0293  0.1927   0.5205
+95%       0.0725        0.0633  0.4128   0.5311
+mean      0.0399        0.0292  0.1917   0.5205
