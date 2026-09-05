@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from scipy.stats import skew, kurtosis, norm
 from scipy.integrate import quad
 from scipy.stats.qmc import LatinHypercube
@@ -172,26 +173,21 @@ def diagnose_oos_lhs(lhs_paths, annual_factor=252, risk_free_rate=0.02, n_trials
 # ---------------------------------------------------------------------------
 # 换手率 / 消融统计基础件
 # ---------------------------------------------------------------------------
-def turnover_series(fold_paths, n_test_folds=2):
+def turnover_series(oos_mpt):
     """相邻 OOS 段的持仓换手率 (0~1)：weights(数组) + assets 对齐。
-
-    取每条 canonical 路径（每折 path 0）的 test 块序列，相邻块计算
-    0.5 * |Δw|（资产并集对齐）。返回 pd.Series（空表示无可比相邻段）。
+    oos_mpt : MultiPeriodPortfolio，OOS 段组合
     """
     tos = []
     prev_w, prev_a = None, None
-    for i in sorted(fold_paths):
-        pid = sorted(fold_paths[i])[0]
-        for b in range(n_test_folds):
-            ptf = fold_paths[i][pid][b]
-            w, a = ptf.weights, ptf.assets          # 数组, 与 assets 对应
-            if prev_w is not None:
-                common = np.union1d(prev_a, a)
-                w1 = np.zeros(len(common)); w2 = np.zeros(len(common))
-                w1[np.isin(common, prev_a)] = prev_w
-                w2[np.isin(common, a)] = w
-                tos.append(0.5 * np.abs(w1 - w2).sum())
-            prev_w, prev_a = w, a
+    for ptf in oos_mpt:
+        w, a = ptf.weights, ptf.assets          # 数组, 与 assets 对应
+        if prev_w is not None:
+            common = np.union1d(prev_a, a)
+            w1 = np.zeros(len(common)); w2 = np.zeros(len(common))
+            w1[np.isin(common, prev_a)] = prev_w
+            w2[np.isin(common, a)] = w
+            tos.append(0.5 * np.abs(w1 - w2).sum())
+        prev_w, prev_a = w, a
     return pd.Series(tos)
 
 
@@ -208,3 +204,110 @@ def boot_diff_ci(a, b, n_boot=3000, seed=42):
     diffs = np.array([rng.choice(a, na, replace=True).mean()
                       - rng.choice(b, nb, replace=True).mean() for _ in range(n_boot)])
     return diffs.mean(), np.percentile(diffs, [2.5, 97.5])
+
+
+# ---------------------------------------------------------------------------
+# 年化分布报告（多路径分布 vs WF OOS 顺序路径）
+# ---------------------------------------------------------------------------
+def report_ann_distribution(path_anns, oos_ann):
+    """LHS 多路径年化分布 vs WF OOS 顺序路径：打印分布统计并绘制直方图对比。
+
+    Parameters
+    ----------
+    path_anns : array-like，各 LHS 路径的 annualized_mean（调用方从 oos_mpts 提取）
+    oos_ann : float，WF OOS 顺序路径的 annualized_mean（图中红线标记）
+
+    Notes
+    -----
+    从 WF+CPCV+PS_252.ipynb 抽取；plt.show() 语义保留，标题/标签全英文
+    避免中文字体依赖。
+    """
+    path_anns = np.asarray(path_anns, dtype=float)
+
+    print(f"LHS多路径分布({len(path_anns)}条): 均值 {path_anns.mean():.4f} | 中位 {np.median(path_anns):.4f} | "
+          f"5% {np.percentile(path_anns, 5):.4f} | 95% {np.percentile(path_anns, 95):.4f}")
+    print(f"WF真实路径: {oos_ann:.4f} | 分布中 {(oos_ann - path_anns.mean()) / path_anns.std():.2f}σ | "
+          f"分位 {(path_anns < oos_ann).mean():.1%}")
+
+    plt.figure(figsize=(10, 4))
+    plt.hist(path_anns, bins=50, alpha=0.7)
+    plt.axvline(x=oos_ann, c='red', ls='--', label=f'OOS path {oos_ann:.3f}')
+    plt.axvline(x=np.median(path_anns), c='green', ls='--', label=f'median {np.median(path_anns):.3f}')
+    plt.legend()
+    plt.title('LHS path annualized distribution vs WF OOS sequential path')
+    plt.show()
+
+
+# ---------------------------------------------------------------------------
+# OOS vs 基准净值对比图
+# ---------------------------------------------------------------------------
+def plot_oos_vs_bench(oos_mpt, bench_ret):
+    """WF OOS 策略净值 vs 基准净值（沪深300ETF）对比图。
+
+    Parameters
+    ----------
+    oos_mpt : MultiPeriodPortfolio，WF OOS 顺序路径组合（其 returns_df 决定区间）
+    bench_ret : pd.Series，基准日收益序列；长于 OOS 区间时自动裁剪到
+        [start, end] 并对齐 OOS 索引（ffill 补缺口）
+
+    Notes
+    -----
+    从 WF+CPCV+PS_252.ipynb 抽取；图内中文字体用 rc_context 局部设置，
+    不依赖调用方全局 rcParams。
+    """
+    returns_df = oos_mpt.returns_df
+    start = returns_df.index[0]
+    end = returns_df.index[-1]
+
+    oos_nav = (1 + returns_df).cumprod()
+    bench_ret = bench_ret.loc[start:end].reindex(oos_nav.index).ffill()
+    bench_nav = (1 + bench_ret).cumprod()
+
+    with plt.rc_context({"font.sans-serif": ["Microsoft YaHei", "SimHei", "DejaVu Sans"],
+                         "axes.unicode_minus": False}):
+        plt.figure(figsize=(10, 4))
+        plt.plot(oos_nav.index, oos_nav.values, label="OOS (参数自适应+t固定)")
+        plt.plot(bench_nav.index, bench_nav.values, label="沪深300ETF", alpha=0.7)
+        plt.legend()
+        plt.title("OOS vs 沪深300ETF 净值")
+        plt.show()
+
+
+# ---------------------------------------------------------------------------
+# 相对基准超额统计（几何/算术超额、IR、胜率）
+# ---------------------------------------------------------------------------
+def excess_vs_bench(oos_mpts, bench_ret):
+    """OOS 路径相对基准（沪深300）的超额口径统计，一行一路径。
+
+    Parameters
+    ----------
+    oos_mpts : list[MultiPeriodPortfolio]，OOS 顺序路径组合列表
+    bench_ret : pd.Series，基准日收益序列；区间按首条路径裁剪，各路径
+        相对收益逐条对齐（reindex + ffill）
+
+    Returns
+    -------
+    pd.DataFrame : 行 = 各路径；列 = ann_excess（几何超额 = 相对净值年化）
+        | arith_excess（算术超额）| IR | winrate（日胜率）。
+        并打印 5%/50%/95%/mean 摘要（原 notebook 中 log_result 写入由调用方处理）。
+    """
+    returns_df = oos_mpts[0].returns_df
+    start = returns_df.index[0]
+    end = returns_df.index[-1]
+    bench_full = bench_ret.loc[start:end]
+    bench_ann = (1 + bench_full).prod() ** (252 / len(bench_full)) - 1
+
+    excess_stats = []
+    for mpp in oos_mpts:
+        r = mpp.returns_df
+        e = r - bench_full.reindex(r.index).ffill()
+        excess_stats.append([
+            (1 + mpp.annualized_mean) / (1 + bench_ann) - 1,  # 几何超额(相对净值年化)
+            e.mean() * 252,                                    # 算术超额
+            e.mean() / e.std() * np.sqrt(252),                 # IR (口径不变)
+            (e > 0).mean(),                                    # 日胜率 (口径不变)
+        ])
+
+    df_ex = pd.DataFrame(excess_stats, columns=["ann_excess", "arith_excess", "IR", "winrate"])
+    print(df_ex.describe(percentiles=[0.05, 0.5, 0.95]).loc[["5%", "50%", "95%", "mean"]].round(4))
+    return df_ex

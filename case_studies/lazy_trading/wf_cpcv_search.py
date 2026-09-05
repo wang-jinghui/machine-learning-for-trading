@@ -52,6 +52,7 @@ import tomllib
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from sklearn.pipeline import Pipeline
 from skfolio.model_selection import WalkForward, CombinatorialPurgedCV, cross_val_predict
 from skfolio.optimization import EqualWeighted
@@ -167,10 +168,13 @@ def inner_cpcv_score(X_tr, params, test_size, n_jobs=4, n_test_folds=2):
     inner_cv = CombinatorialPurgedCV(n_folds=n_folds, n_test_folds=n_test_folds,
                                      purged_size=2, embargo_size=2)
     cvp = cross_val_predict(model, X_tr, cv=inner_cv, n_jobs=n_jobs)
-    ann_mean = np.array([mptf.annualized_mean for mptf in cvp])
+    #ann_mean = np.array([mptf.annualized_mean for mptf in cvp])
+    ann_sr = np.array([mptf.annualized_sharpe_ratio for mptf in cvp])
     max_dd = np.array([mptf.max_drawdown for mptf in cvp])
+    #avg_dd = np.array([mptf.average_drawdown for mptf in cvp])
     skew = np.array([mptf.skew for mptf in cvp])
-    return float(np.mean(ann_mean) - np.mean(max_dd) + np.mean(skew))
+    #kurt = np.array([mptf.kurtosis for mptf in cvp])
+    return float(np.median(ann_sr) - np.median(max_dd) + np.median(skew)) #- np.mean(kurt))//100
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +212,6 @@ def search_inner_params(X_tr, space, test_size, n_test_folds=2, n_jobs=4,
                    n_jobs=n_jobs,
                    show_progress_bar=verbose,
                    callbacks=[StopWhenNoImprovement(patience=patience, min_delta=min_delta)])
-    if verbose:
-        print(f"    best: {study.best_params} -> score={study.best_value:.4f}")
     return dict(study.best_params), study.best_value
 
 
@@ -274,6 +276,29 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
             print(f"Fold {i}: inner_score={score:.4f} | "
                   f"test_ann={test_ptf.annualized_mean:.4f} | test_days={len(test_ptf.returns)}")
     return folds
+
+
+def summarize_fold_params(fold_results):
+    """解析 nested_adaptive_search 的每折参数结果，格式化为一行一折的表格。
+
+    Parameters
+    ----------
+    fold_results : list
+        nested_adaptive_search 返回的 folds（[{fold, params, inner_median, test}]）
+
+    Returns
+    -------
+    pd.DataFrame
+        列 = fold | inner_median | 各参数键；fitness_measures 展平为
+        fitness 字符串列（便于一眼对比各折选了哪个 measure 组合）
+    """
+    rows = []
+    for f in fold_results:
+        p = dict(f["params"])
+        p["fitness"] = str(p["nondomin__fitness_measures"])
+        del p["nondomin__fitness_measures"]
+        rows.append({"fold": f["fold"], "inner_median": round(f["inner_median"], 4), **p})
+    return pd.DataFrame(rows)
 
 
 def adaptive_multi_paths(X, folds, test_size=126, train_size=756,
