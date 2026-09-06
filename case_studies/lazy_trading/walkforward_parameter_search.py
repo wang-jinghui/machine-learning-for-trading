@@ -73,6 +73,8 @@ FITNESS_MEASURES = {
     # MEAN + RiskMeasure 组合
     "mean-variance": [PerfMeasure.MEAN, RiskMeasure.VARIANCE],
     "mean-variance-cvar": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.CVAR],
+    "mean-semivariance": [PerfMeasure.MEAN, RiskMeasure.SEMI_VARIANCE],
+    "mean-semivariance-cvar": [PerfMeasure.MEAN, RiskMeasure.SEMI_VARIANCE, RiskMeasure.CVAR],
     "mean-semivariance-avgdd": [PerfMeasure.MEAN, RiskMeasure.SEMI_VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN],
     "mean-variance-maxdd": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.MAX_DRAWDOWN],
     "mean-variance-avgdd": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN],
