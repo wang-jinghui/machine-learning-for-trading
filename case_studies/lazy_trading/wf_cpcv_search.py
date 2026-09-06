@@ -168,13 +168,38 @@ def inner_cpcv_score(X_tr, params, test_size, n_jobs=4, n_test_folds=2):
     inner_cv = CombinatorialPurgedCV(n_folds=n_folds, n_test_folds=n_test_folds,
                                      purged_size=2, embargo_size=2)
     cvp = cross_val_predict(model, X_tr, cv=inner_cv, n_jobs=n_jobs)
-    #ann_mean = np.array([mptf.annualized_mean for mptf in cvp])
-    ann_sr = np.array([mptf.annualized_sharpe_ratio for mptf in cvp])
-    max_dd = np.array([mptf.max_drawdown for mptf in cvp])
-    #avg_dd = np.array([mptf.average_drawdown for mptf in cvp])
-    skew = np.array([mptf.skew for mptf in cvp])
-    #kurt = np.array([mptf.kurtosis for mptf in cvp])
-    return float(np.median(ann_sr) - np.median(max_dd) + np.median(skew)) #- np.mean(kurt))//100
+    #ann_mean = np.array([mptf.annualized_mean for mptf in cvp]).mean()
+    #ann_std = np.array([mptf.annualized_standard_deviation for mptf in cvp]).mean()
+    #ann_semidev = np.array([mptf.annualized_semi_deviation for mptf in cvp]).mean()
+    #mad = np.array([mptf.mean_absolute_deviation for mptf in cvp]).mean()
+    #cvar = np.array([mptf.cvar for mptf in cvp]).mean()
+    #cdar = np.array([mptf.cdar for mptf in cvp]).mean()
+    #edar = np.array([mptf.edar for mptf in cvp]).mean()
+    maxdd = np.array([mptf.max_drawdown for mptf in cvp]).mean()
+    #avgdd = np.array([mptf.average_drawdown for mptf in cvp]).mean()
+    skew = np.array([mptf.skew for mptf in cvp]).mean()
+    #kurt = np.array([mptf.kurtosis for mptf in cvp]).mean()
+    # RatioMeasure 全量 18 项：超额 Mean 除以各风险度量的比率（逐路径取均值）
+    #sr = np.array([mptf.sharpe_ratio for mptf in cvp]).mean()
+    asr = np.array([mptf.annualized_sharpe_ratio for mptf in cvp]).mean()
+    #sor = np.array([mptf.sortino_ratio for mptf in cvp]).mean()
+    #asor = np.array([mptf.annualized_sortino_ratio for mptf in cvp]).mean()
+    #madr = np.array([mptf.mean_absolute_deviation_ratio for mptf in cvp]).mean()
+    #flpmr = np.array([mptf.first_lower_partial_moment_ratio for mptf in cvp]).mean()
+    #varr = np.array([mptf.value_at_risk_ratio for mptf in cvp]).mean()
+    #cvarr = np.array([mptf.cvar_ratio for mptf in cvp]).mean()
+    #ermr = np.array([mptf.entropic_risk_measure_ratio for mptf in cvp]).mean()
+    #evarr = np.array([mptf.evar_ratio for mptf in cvp]).mean()
+    #wrr = np.array([mptf.worst_realization_ratio for mptf in cvp]).mean()
+    #darr = np.array([mptf.drawdown_at_risk_ratio for mptf in cvp]).mean()
+    #cdarr = np.array([mptf.cdar_ratio for mptf in cvp]).mean()
+    #calmar = np.array([mptf.calmar_ratio for mptf in cvp]).mean()
+    #avgddr = np.array([mptf.average_drawdown_ratio for mptf in cvp]).mean()
+    #edarr = np.array([mptf.edar_ratio for mptf in cvp]).mean()
+    #uir = np.array([mptf.ulcer_index_ratio for mptf in cvp]).mean()
+    #ginir = np.array([mptf.gini_mean_difference_ratio for mptf in cvp]).mean()
+
+    return asr + skew - maxdd
 
 
 # ---------------------------------------------------------------------------
@@ -269,11 +294,14 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
         w = X_tr.iloc[-best["train_size"]:]
         m = build_pipeline(best)
         m.fit(w)
+        train_ptf = m.predict(X_tr)
         test_ptf = m.predict(X_te)
         test_ptf.name = f"Fold{i}"   # predict 不接受 portfolio_params(0.20.x), 预测后设置名称
-        folds.append({"fold": i, "params": best, "inner_median": score, "test": test_ptf})
+        folds.append({"fold": i, "params": best, "score": score, "test": test_ptf, "train": train_ptf, 
+                      "train ASR": train_ptf.annualized_sharpe_ratio,
+                      "test ASR": test_ptf.annualized_sharpe_ratio})
         if verbose:
-            print(f"Fold {i}: inner_score={score:.4f} | "
+            print(f"Fold {i}: mean score={score:.4f} | "
                   f"test_ann={test_ptf.annualized_mean:.4f} | test_days={len(test_ptf.returns)}")
     return folds
 
@@ -297,7 +325,7 @@ def summarize_fold_params(fold_results):
         p = dict(f["params"])
         p["fitness"] = str(p["nondomin__fitness_measures"])
         del p["nondomin__fitness_measures"]
-        rows.append({"fold": f["fold"], "inner_median": round(f["inner_median"], 4), **p})
+        rows.append({"fold": f["fold"], "score": round(f["score"], 4), "train ASR": round(f["train ASR"], 4), "test ASR": round(f["test ASR"], 4), **p})
     return pd.DataFrame(rows)
 
 
