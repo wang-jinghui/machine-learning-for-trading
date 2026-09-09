@@ -95,8 +95,14 @@ print(df[["fold", "dsr", "train ASR", "test ASR", "WFE", "flag"]])
 eval_ = topk_paths_eval(X, folds, k=5)            # 每折 top1~5 全部进 CPCV 多路径压测
 paths = eval_["paths"]                            # MultiIndex (fold, rank, path)
 audit = eval_["audit"]                            # IS 侧审计，与 paths 按 (fold, rank) 对齐
+
+# 方案 A：unstack 后 rank 已转入列方向（列=rank 1~5，行=(fold, path)），
+#         直接对列求均值即各 rank 的跨路径对比（勿再按列名 "rank" groupby，会 KeyError）
 sharpe = paths["annualized_sharpe_ratio"].unstack("rank")
-print(sharpe.groupby("rank").mean())              # rank 均值对比（不选参，只看高原）
+print(sharpe.mean())                              # 每列均值 = 该 rank 的平均年化夏普
+
+# 方案 B（等价，语义更直白）：不 unstack，直接在 Series 上按索引层级 rank 分组
+print(paths["annualized_sharpe_ratio"].groupby("rank").mean())
 ```
 
 - 窗口自动从 folds 推导（折位 1:1）；如需 notebook 原压测口径（如 `n_test_folds=4`），
@@ -120,9 +126,22 @@ ax = c.pivot_table(index="frac", columns="fold",
 ### Step 5｜双参数联合热力图（checklist 4.2）
 
 ```python
+import numpy as np
+import matplotlib.pyplot as plt
+
 grids = sensitivity_heatmap(X, folds, param_a="extremes__k",
                             param_b="correlate__threshold")
-grids["mean"].plot(kind="contour", xlabel="extremes__k", ylabel="correlate__threshold")
+mean = grids["mean"]                             # 行=frac_a(param_a), 列=frac_b(param_b)
+# DataFrame.plot 无 contour 图型 → 用 matplotlib 直接画（X/Y/Z 同形对齐）
+Xg, Yg = np.meshgrid(mean.columns, mean.index)   # x=frac_b, y=frac_a
+cf = plt.contourf(Xg, Yg, mean.values, levels=15, cmap="viridis")   # 彩色填充
+cs = plt.contour(Xg, Yg, mean.values, levels=8, colors="k", linewidths=0.6)  # 等值线
+plt.clabel(cs, inline=True, fontsize=8)          # 标注等值线数值
+plt.axhline(0, color="gray", lw=0.8, ls="--")   # 虚线十字 = 生产值锚点 (0,0)
+plt.axvline(0, color="gray", lw=0.8, ls="--")
+plt.xlabel("correlate__threshold 扰动 frac_b")
+plt.ylabel("extremes__k 扰动 frac_a")
+plt.colorbar(cf, label="mean annualized_sharpe_ratio")
 ```
 
 - 返回 `{fold: DataFrame(index=frac_a, columns=frac_b), "mean": 跨折逐格平均}`。
