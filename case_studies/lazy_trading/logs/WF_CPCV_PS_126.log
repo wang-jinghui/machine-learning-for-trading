@@ -396,3 +396,31 @@ dtype: str
 50%       0.0522        0.0414  0.2482   0.5147
 95%       0.0996        0.0907  0.5003   0.5263
 mean      0.0532        0.0425  0.2451   0.5146
+
+========================================================================
+[2026-09-07 18:11:12] Ojective
+========================================================================
+mean(Annualized Sharpe Ratio) + mean(Skew) - mean(Max Drawdown)
+
+========================================================================
+[2026-09-07 18:11:12] Model Pipeline
+========================================================================
+Pipeline([
+        ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("extremes", SelectKExtremes(
+            k=params["extremes__k"], measure=ExtraRiskMeasure.KURTOSIS, highest=False)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=params["nondomin__min_n_assets"],
+            threshold=params["nondomin__threshold"],
+            fitness_measures=fm,
+        )),
+        ("correlate", DropCorrelated(threshold=params["correlate__threshold"])),
+        ("optimization", EqualWeighted()),
+    ])
+
+
+========================================================================
+[2026-09-07 18:33:05] Parameter Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 25, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.5, 'step': 0.1}, 'extremes__k': {'low': 0.1, 'high': 0.5, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-maxdd-kurt', 'mean-variance-avgdd-kurt', 'mean-mad-maxdd-kurt', 'mean-mad-avgdd-kurt', 'mean-mad-maxdd-cvar-kurt', 'mean-mad-avgdd-cvar-kurt'], 'train_size': {'low': 504, 'high': 504, 'step': 252}}
