@@ -194,7 +194,7 @@ def inner_cpcv_score(X_tr, params, test_size, n_jobs=4, n_test_folds=2,
     #cvar = np.array([mptf.cvar for mptf in cvp]).mean()
     #cdar = np.array([mptf.cdar for mptf in cvp]).mean()
     #edar = np.array([mptf.edar for mptf in cvp]).mean()
-    #maxdd = np.array([mptf.max_drawdown for mptf in cvp]).mean()
+    maxdd = np.array([mptf.max_drawdown for mptf in cvp]).mean()
     #avgdd = np.array([mptf.average_drawdown for mptf in cvp]).mean()
     #skew = np.array([mptf.skew for mptf in cvp]).mean()
     #kurt = np.array([mptf.kurtosis for mptf in cvp]).mean()
@@ -217,7 +217,7 @@ def inner_cpcv_score(X_tr, params, test_size, n_jobs=4, n_test_folds=2,
     #edarr = np.array([mptf.edar_ratio for mptf in cvp]).mean()
     #uir = np.array([mptf.ulcer_index_ratio for mptf in cvp]).mean()
     #ginir = np.array([mptf.gini_mean_difference_ratio for mptf in cvp]).mean()
-    return asr
+    return asr - maxdd
 
 
 # ---------------------------------------------------------------------------
@@ -281,17 +281,19 @@ def _outer_wf(X, test_size, train_size, purged_size, reduce_test):
 
 
 def run_params_on_fold(X, fold_idx, params, test_size=126, train_size=756,
-                       purged_size=1, reduce_test=True):
+                       purged_size=1, reduce_test=True, pipeline_builder=None):
     """固定参数在外层 WF 第 fold_idx 折上的普通 OOS 应用（无内层 CPCV 展开）。
 
     语义与 nested_adaptive_search 折末完全一致：模型 fit 在训练段最近
     params["train_size"] 天（内层训练子窗口，注意与外层参数 train_size
     同名不同义），随后预测全训练段与纯净 test 段 —— 供参数扰动 /
-    敏感性 / Top-K 候选评估等"固定参数直接应用"场景复用（只评估、不
-    搜索、不选参，不构成 OOS 消耗）。
+    敏感性 / Top-K 候选评估 / 消融等"固定参数直接应用"场景复用（只
+    评估、不搜索、不选参，不构成 OOS 消耗）。
     fold_idx 与嵌套搜索折位对齐：调用方须使用与 nested_adaptive_search
     相同的 test_size / train_size / purged_size / reduce_test，否则折位
     错位（扰动/敏感性模块的逐折循环天然满足）。
+    pipeline_builder : 可选的管道构建器（默认 build_pipeline），供消融
+    （步骤开关变体）等场景注入；签名与 build_pipeline 一致（params → Pipeline）。
 
     Returns
     -------
@@ -303,7 +305,8 @@ def run_params_on_fold(X, fold_idx, params, test_size=126, train_size=756,
     X_tr = X.iloc[tr_idx]
     # 窗口与嵌套搜索同口径：最近 params["train_size"] 天
     w = X_tr.iloc[-params["train_size"]:]
-    m = build_pipeline(params)
+    builder = pipeline_builder if pipeline_builder is not None else build_pipeline
+    m = builder(params)
     m.fit(w)
     return m.predict(X_tr), m.predict(X.iloc[te_idx])
 

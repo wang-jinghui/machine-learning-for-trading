@@ -34,7 +34,7 @@ notebook 用法（fold_results 来自 nested_adaptive_search）::
     out = perturbation_mc(X, fold_results, R=50)        # dict: samples/fold_summary/verdict
     print(out["verdict"])                                # 5.3 判定表（正收益概率≥80%等）
     curves = sensitivity_curves(X, fold_results)         # 4.1 行=(折,参数,档位)
-    eval_ = topk_paths_eval(X, fold_results, k=5)        # Top-K 候选 OOS 多路径压测
+    eval_ = topk_paths_eval(X, fold_results, k=5)        # 每 rank 一条完整OOS路径（全折test段拼接）
 """
 
 from __future__ import annotations
@@ -45,10 +45,10 @@ import sys
 
 import numpy as np
 import pandas as pd
+from skfolio import MultiPeriodPortfolio
 
-from cpcv_analysis import fold_paths_frame, top_trials
+from cpcv_analysis import top_trials
 from wf_cpcv_search import (
-    adaptive_multi_paths,
     derive_outer_window,
     load_nested_config,
     load_space,
@@ -365,53 +365,73 @@ def sensitivity_heatmap(X, folds, param_a, param_b,
 
 
 # ---------------------------------------------------------------------------
-# Top-K 候选 OOS 多路径压测（top1 锚定扰动；top2~k 离散评估对比）
+# Top-K 候选完整 OOS 路径对比（每 rank = 一条全折拼接路径；只评估、不选参）
 # ---------------------------------------------------------------------------
-def topk_paths_eval(X, folds, k=5, paths_kwargs=None,
+def topk_paths_eval(X, folds, k=5,
                     metrics=("annualized_sharpe_ratio", "annualized_mean",
                              "max_drawdown"),
+                    wf_kwargs=None, purged_size=1, reduce_test=True,
                     verbose=True):
-    """每折 Top-K 候选全部进 adaptive_multi_paths 做 OOS 多路径压测。
+    """每折 Top-K 候选各自生成一条完整 OOS 路径后对比。
 
-    只评估、不选参：即使候选压测结果显示 top1 并非 OOS 最优，也不得据
-    此换参（换参 = 用 OOS 选择 = 消耗该段；候选对比的价值在"参数高原
-    的 OOS 侧印证"——gap2top1 小的候选若 OOS 同样接近，说明生产参数
-    处在一个稳定平台而非运气孤峰）。
+    每个 rank = 一个候选组合：每折取该折 study 第 rank 档候选参数，普通
+    OOS 单测（run_params_on_fold，无内层 CPCV 展开，与部署语义一致）得到
+    该折纯净 test 段，**所有折的 test 段拼接为一条 MultiPeriodPortfolio**
+    —— 一条完整 OOS 路径，在完整路径上取 skfolio 指标。rank 间对比 =
+    "若部署第 rank 档参数，完整 OOS 路径会是什么样"。
 
-    paths_kwargs 未给或缺少窗口键时，从 folds 推导外层窗口（与嵌套搜索
-    折位 1:1 对齐，防静默错位）；显式键优先（notebook 原压测口径如
-    n_test_folds=4 等请在此传入）。
+    不用 CPCV 多路径压测：每折内层 OOS 组数（重组路径数）随该折窗口/
+    折数可变，跨折无法对齐成"同一路径 id"的完整路径；多路径分布由
+    LHS 采样场景负责，此处每 rank 一条路径即可。
+
+    只评估、不选参：即使候选对比显示 top1 并非 OOS 最优，也不得据
+    此换参（换参 = 用 OOS 选择 = 消耗该段）；候选对比的价值在"参数
+    高原的 OOS 侧印证"——gap2top1 小的候选若 OOS 同样接近，说明生产
+    参数处在一个稳定平台而非运气孤峰。
+
+    wf_kwargs 未给时从 folds 推导折位参数（与嵌套搜索 1:1 对齐，防静默
+    错位）；purged_size / reduce_test 默认 1 / True（与搜索侧一致，含
+    缩短尾折），须与搜索配置核对。某折候选不足该 rank 档时整档跳过
+    （保证各 rank 均为全折完整路径，长度可比）。
 
     Returns
     -------
     dict :
-        paths : DataFrame，行 MultiIndex (fold, rank, path)；列 = metrics
-            （rank=1 即生产参数的多路径绩效；与其余 rank 同窗同口径）
+        paths : DataFrame，行 = rank；列 = metrics——每 rank 一条完整
+            OOS 路径的绩效（rank=1 即生产参数）
+        mpts  : dict {rank: MultiPeriodPortfolio}，完整 OOS 路径本体
+            （供画累计收益 / 分年统计等）
         audit : DataFrame，summarize_top_k_params 的 IS 侧审计（score /
-            gap2top1 / 参数快照），与 OOS paths 按 (fold, rank) 对齐
-        frames: dict {(fold, rank): DataFrame(行=path, 列=metrics)}，
-            供逐折逐候选画分布图
+            gap2top1 / 参数快照），与 paths 按 rank 对齐
     """
-    w = derive_outer_window(folds)       # test/train/purged/reduce_test=搜索口径
-    w.update(dict(paths_kwargs or {}))   # 用户显式键优先
-    rows, idx, frames = [], [], {}
-    for f in folds:
-        cands = top_trials(f["study"].trials, k=k)
-        for rank, t in enumerate(cands, start=1):
-            sub = [{"fold": f["fold"], "params": t.params}]
-            fp = adaptive_multi_paths(X, sub, **w)      # 只压测该折
-            df = fold_paths_frame(fp, list(metrics))
-            frames[(f["fold"], rank)] = df
-            for (fold_, path), row in df.iterrows():
-                rows.append(row.to_dict())
-                idx.append((fold_, rank, path))
+    if wf_kwargs is None:
+        wf_kwargs = derive_wf_kwargs(folds, purged_size=purged_size,
+                                     reduce_test=reduce_test)
+    cands_by_fold = {f["fold"]: top_trials(f["study"].trials, k=k) for f in folds}
+    rows, labels, mpts = [], [], {}
+    for rank in range(1, k + 1):
+        missing = [f["fold"] for f in folds
+                   if len(cands_by_fold[f["fold"]]) < rank]
+        if missing:
             if verbose:
-                print(f"Fold {f['fold']} rank{rank}: "
-                      f"score={float(t.values[0]):.4f} | 多路径压测完成")
-    paths = pd.DataFrame(rows, index=pd.MultiIndex.from_tuples(
-        idx, names=["fold", "rank", "path"]))
-    return {"paths": paths, "audit": summarize_top_k_params(folds, k=k),
-            "frames": frames}
+                print(f"rank{rank}: 折 {missing} 候选不足，整档跳过")
+            continue
+        # 每折该 rank 档候选的纯净 test 段（部署语义：fit 训练尾段 → 预测 test）
+        parts = [run_params_on_fold(X, f["fold"],
+                                    cands_by_fold[f["fold"]][rank - 1].params,
+                                    **wf_kwargs)[1]
+                 for f in folds]
+        mpp = MultiPeriodPortfolio(parts)          # 全折 test 段拼接 = 完整 OOS 路径
+        mpts[rank] = mpp
+        rows.append([getattr(mpp, met) for met in metrics])
+        labels.append(rank)
+        if verbose:
+            print(f"rank{rank}: 完整OOS路径 | {len(parts)} 折拼接 | "
+                  f"{sum(len(p.returns) for p in parts)} 天")
+    paths = pd.DataFrame(rows, index=pd.Index(labels, name="rank"),
+                         columns=list(metrics))
+    return {"paths": paths, "mpts": mpts,
+            "audit": summarize_top_k_params(folds, k=k)}
 
 
 # ---------------------------------------------------------------------------

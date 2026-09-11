@@ -9,10 +9,9 @@
         消融的是"组件存在与否的边际贡献"，口径干净、成本 ≈ 臂数 × 一次
         压测；重搜会混入参数自适应噪声，且计算量不可行）。
     臂   : 固定每折参数不变，按步骤名开关 pipeline（剔除 extremes /
-        nondomin / correlate 等），复用 adaptive_multi_paths 的 CPCV
-        多路径压测（通过其 pipeline_builder 参数注入变体构建器）。
-    对比 : 各臂与基准臂的 OOS 多路径绩效分布对照表（mean/median/5%/95%），
-        (折, 路径) 级样本的差异显著性可用 cpcv_analysis.boot_diff_ci 自取。
+        nondomin / correlate 等），逐折普通 OOS 单测（无内层 CPCV 展开，
+        与部署语义一致），所有折 test 段拼接为一条完整 OOS 路径。
+    对比 : 各臂与基准臂的完整 OOS 路径绩效对照表（臂 × 指标）。
 
 与 cpcv_search_base.build_pipeline 的关系：本模块自带 build_variant_pipeline
 （同构副本 + 步骤开关），**不修改** cpcv_search_base / wf_cpcv_search 的
@@ -21,11 +20,9 @@ pipeline 本体 —— 搜索语义不受消融影响，变更亦不波及其他
 用法（notebook 会话内，fold_results 来自 nested_adaptive_search）::
 
     from wf_cpcv_ablation import ARMS, ablate
-    paths_kwargs = dict(test_size=252, train_size=1008, n_test_folds=4,
-                        n_jobs=8, inner_purged_size=2, inner_embargo_size=2)
-    frames, summary = ablate(X, fold_results, paths_kwargs=paths_kwargs)
+    paths, summary = ablate(X, fold_results)   # 每臂一条完整 OOS 路径（全折拼接）
     print(summary)                      # 臂 × 指标汇总表
-    # frames["no_extremes"] 等为 (折,路径) 级绩效表，可绘图/显著性检验
+    # paths["no_extremes"] 等为 MultiPeriodPortfolio，可画累计收益/分年统计
 
 CLI（冒烟/小预算验证用，完整消融建议在 notebook 会话内复用已完成的搜索）::
 
@@ -41,7 +38,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
-from skfolio import ExtraRiskMeasure
+from skfolio import ExtraRiskMeasure, MultiPeriodPortfolio
 from skfolio.optimization import EqualWeighted
 from skfolio.pre_selection import (
     DropCorrelated,
@@ -52,11 +49,11 @@ from skfolio.pre_selection import (
 
 import cpcv_search_base as base
 from Pre_selection import SelectKExtremes
+from wf_cpcv_robustness import derive_wf_kwargs
 from wf_cpcv_search import (
-    adaptive_multi_paths,
-    derive_outer_window,
     load_nested_config,
     nested_adaptive_search,
+    run_params_on_fold,
 )
 
 # Windows GBK 控制台打印中文安全兜底（与同目录脚本一致）
@@ -110,59 +107,66 @@ def build_variant_pipeline(params: dict, drops=()) -> Pipeline:
     return Pipeline([s for s in steps if s[0] not in drops])
 
 
-def arm_fold_paths(X, folds, drops=(), paths_kwargs=None):
-    """单臂多路径压测：固定每折最优参数 + 步骤开关。
+def arm_oos_path(X, folds, drops=(), wf_kwargs=None, purged_size=1,
+                 reduce_test=True):
+    """单臂完整 OOS 路径：固定每折最优参数 + 步骤开关（drops），逐折普通
+    OOS 单测（run_params_on_fold，无内层 CPCV 展开，与部署语义一致），
+    所有折的 test 段拼接为一条 MultiPeriodPortfolio；drops=() 时为基准臂。
 
-    复用 wf_cpcv_search.adaptive_multi_paths（其 pipeline_builder 注入
-    变体构建器，本体与折对齐逻辑不变）；drops=() 时为基准臂。
-    paths_kwargs 未给或缺少窗口键时，从 folds 推导外层窗口（与嵌套搜索
-    折位 1:1 对齐，防静默错位）；显式键优先。
+    wf_kwargs 未给时从 folds 推导折位参数（与嵌套搜索 1:1 对齐）；
+    purged_size / reduce_test 默认 1 / True（与搜索侧一致，含缩短尾折），
+    须与搜索配置核对。
     """
-    w = derive_outer_window(folds)       # test/train/purged/reduce_test=搜索口径
-    w.update(dict(paths_kwargs or {}))   # 用户显式键优先
-    return adaptive_multi_paths(
-        X, folds,
-        **{**w, "pipeline_builder": (lambda p: build_variant_pipeline(p, drops))})
+    if wf_kwargs is None:
+        wf_kwargs = derive_wf_kwargs(folds, purged_size=purged_size,
+                                     reduce_test=reduce_test)
+
+    def builder(p):
+        return build_variant_pipeline(p, drops)
+
+    parts = [run_params_on_fold(X, f["fold"], f["params"],
+                                **wf_kwargs, pipeline_builder=builder)[1]
+             for f in folds]
+    return MultiPeriodPortfolio(parts)
 
 
-def ablate(X, folds, arms=None, paths_kwargs=None, metrics=DEFAULT_METRICS):
+def ablate(X, folds, arms=None, wf_kwargs=None, purged_size=1,
+           reduce_test=True, metrics=DEFAULT_METRICS):
     """执行固定参数消融并汇总（checklist 4.3：逐模块边际贡献对照）。
+
+    每臂 = 固定每折最优参数 + 步骤开关，逐折普通 OOS 单测，所有折 test
+    段拼接为一条完整 OOS 路径，在完整路径上取 skfolio 指标；臂间对比 =
+    "若换用该臂管线，完整 OOS 路径会是什么样"。
 
     Parameters
     ----------
     X : pd.DataFrame，与 nested_adaptive_search 同口径的收益数据
     folds : list，nested_adaptive_search 返回结果（每折 params 复用，不重搜）
     arms : list[str] | None，臂名（ARMS 键）；None = 全部臂
-    paths_kwargs : dict | None，透传给 adaptive_multi_paths 的其余参数
-        （n_test_folds / n_jobs 等）；窗口四键（test_size / train_size /
-        outer_purged_size / outer_reduce_test）未给时自动从 folds 推导
-        （折位对齐，防静默错位），显式键优先
+    wf_kwargs : dict | None，run_params_on_fold 的折位参数（None = 从
+        folds 实测段长推导众数窗口；purged/reduce 用下方显式参数）
     metrics : list[str]，绩效指标（skfolio Portfolio/MPP 属性名）
 
     Returns
     -------
-    (frames, summary) : frames = {臂名: DataFrame(行=(折,路径), 列=metrics)}；
-        summary = DataFrame(行=臂, 列=各指标 mean/median/5%/95%)，臂序=full 优先
+    (paths, summary) : paths = {臂名: MultiPeriodPortfolio}（完整 OOS
+        路径本体，供画累计收益/分年统计）；summary = DataFrame（行=臂，
+        列 = 折数/天数 + 各指标），臂序 = full 优先
     """
-    from cpcv_analysis import fold_paths_frame
-
     arms = list(arms) if arms is not None else list(ARMS)
-    frames, rows = {}, []
+    rows, paths = [], {}
     for name in arms:
-        fp = arm_fold_paths(X, folds, drops=ARMS[name]["drops"],
-                            paths_kwargs=paths_kwargs)
-        df = fold_paths_frame(fp, metrics)
-        frames[name] = df
-        s = {"臂": name, "说明": ARMS[name]["label"], "样本数": len(df)}
+        mpp = arm_oos_path(X, folds, drops=ARMS[name]["drops"],
+                           wf_kwargs=wf_kwargs, purged_size=purged_size,
+                           reduce_test=reduce_test)
+        paths[name] = mpp
+        s = {"臂": name, "说明": ARMS[name]["label"],
+             "折数": len(folds), "天数": len(mpp.returns)}
         for m in metrics:
-            col = df[m]
-            s[f"{m}_mean"] = col.mean()
-            s[f"{m}_median"] = col.median()
-            s[f"{m}_p5"] = col.quantile(0.05)
-            s[f"{m}_p95"] = col.quantile(0.95)
+            s[m] = getattr(mpp, m)
         rows.append(s)
     summary = pd.DataFrame(rows).set_index("臂")
-    return frames, summary
+    return paths, summary
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +202,8 @@ def main(argv=None):
     log_print(search_kwargs, section="搜索配置（冒烟）", echo=False)
     folds = nested_adaptive_search(X_use, space=cfg["space"], **search_kwargs)
 
-    frames, summary = ablate(X_use, folds, arms=args.arms)
+    paths, summary = ablate(X_use, folds, arms=args.arms,
+                            purged_size=cfg["outer_wf"]["purged_size"])
     print("\n==== 固定参数消融汇总 ====")
     print(summary.to_string())
     log_result(summary, section="固定参数消融汇总")
