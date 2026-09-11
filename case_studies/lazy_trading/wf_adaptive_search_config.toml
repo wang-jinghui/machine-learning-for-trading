@@ -1,0 +1,62 @@
+# 单层 WF 每折 IS 自适应搜索配置（wf_adaptive_search.py 消费）
+#
+# 架构：与 cpcv_parameter_search（WF+CPCV 嵌套，内层用 CPCV 验证块分数
+#   均值选参）并列的搜索方案——同一套 pipeline 与参数空间；唯一区别是
+#   选择分数：每折以"IS 拟合分数"（fit 最近 ts 天 → 同窗预测的绩效）为
+#   目标做 Optuna 自适应搜索。这是 DSR/FDR/PBO 原文的原生场景（"在同一
+#   数据上试 N 次选最优 → 选择偏差校正 → 独立 OOS 验证"）：CPCV 验证块
+#   分数均值既非拟合 IS 也非时间外推 OOS，与校正工具口径失配；本方案把
+#   选择分数退回拟合 IS，每折 (IS, OOS) 对与校正工具定义一一对应。
+#   代价：验证集正则化被移除（IS 选参天生更过拟合），由"DSR 低 + OOS
+#   显著下降 → 过拟合"判据暴露。
+#
+# [param_space] + [nested_space] 与 cpcv_parameter_search_config.toml
+#   逐键同构（同一份收敛空间）。
+
+[param_space]
+# 筛选参数（与 cpcv 版逐键同构；每折在收敛范围内重新搜索）
+"nondomin__min_n_assets" = { low = 5, high = 25, step = 5 }
+"nondomin__threshold" = { low = -0.5, high = -0.3, step = 0.1 }
+"correlate__threshold" = { low = 0.1, high = 0.5, step = 0.1 }
+"extremes__k" = { low = 0.1, high = 0.5, step = 0.1 }
+"nondomin__fitness_measures" = [
+    "mean-variance",
+    "mean-variance-maxdd",
+    "mean-variance-avgdd",
+    "mean-semideviation-avgdd",
+    "mean-mad-maxdd",
+    "mean-mad-avgdd",
+    "mean-mad-maxdd-cvar",
+    "mean-mad-maxdd-cvar-sharpe",
+    "mean-mad-avgdd-cvar",
+    "mean-mad-avgdd-cvar-sharpe",
+]
+
+[nested_space]
+# 每折内 IS 拟合窗口（搜索维度；上限 ≤ 外层train - test_size）
+"train_size" = { low = 252, high = 504, step = 126 }
+
+[search]
+# 外层 WalkForward（与 cpcv 版同一窗口配置，折位对齐）
+outer_test_size = 126          # 半季
+outer_train_size = 630         # 252 * 2.5
+outer_purged_size = 1
+outer_reduce_test = true       # 不足 test_size 的尾段缩短保留并照常搜参（尾折参数仅供记录）
+# 每折内层 Optuna（单层 trial 并行；无内层 CPCV，无 cv_n_jobs 第二层）
+n_trials = 100                 # 每折 trial 数
+sampler = "tpe"                # "tpe"(自适应引导) | "random"(参数空间独立随机采样,
+                               # random 模式供 DSR deflate——trial 分数序列为 iid 观测; 早停自动禁用)
+patience = 50                  # 早停：连续无有效改善 trial 数
+min_delta = 0.0001             # 早停：有效改善的最小增量
+n_jobs = 12                    # optuna trial 级并行（峰值并发 = n_jobs）
+seed = 42
+verbose = true
+
+[paths]
+# 压测段（检测流 topk_paths_eval / ablate 的 CPCV 多路径压测——评估不选参，
+# 与选择结构解耦；与 cpcv 版 [cpcv] 的 paths_* 语义一致）
+paths_reduce_test = false      # 不产出不完整尾段，尾折参数自然不被压测使用
+n_test_folds = 2
+inner_purged_size = 2
+inner_embargo_size = 2
+n_jobs = 12                    # 压测无 optuna trial 层：单次 cross_val_predict 并行（单层，可直接拉满）
