@@ -196,7 +196,7 @@ def inner_cpcv_score(X_tr, params, test_size, n_jobs=4, n_test_folds=2,
     #edar = np.array([mptf.edar for mptf in cvp]).mean()
     maxdd = np.array([mptf.max_drawdown for mptf in cvp]).mean()
     #avgdd = np.array([mptf.average_drawdown for mptf in cvp]).mean()
-    #skew = np.array([mptf.skew for mptf in cvp]).mean()
+    skew = np.array([mptf.skew for mptf in cvp]).mean()
     #kurt = np.array([mptf.kurtosis for mptf in cvp]).mean()
     # RatioMeasure 全量 18 项：超额 Mean 除以各风险度量的比率（逐路径取均值）
     #sr = np.array([mptf.sharpe_ratio for mptf in cvp]).mean()
@@ -217,7 +217,7 @@ def inner_cpcv_score(X_tr, params, test_size, n_jobs=4, n_test_folds=2,
     #edarr = np.array([mptf.edar_ratio for mptf in cvp]).mean()
     #uir = np.array([mptf.ulcer_index_ratio for mptf in cvp]).mean()
     #ginir = np.array([mptf.gini_mean_difference_ratio for mptf in cvp]).mean()
-    return asr - maxdd
+    return asr*0.5 - maxdd + skew
 
 
 # ---------------------------------------------------------------------------
