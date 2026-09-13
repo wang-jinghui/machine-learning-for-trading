@@ -435,3 +435,85 @@ def excess_vs_bench(oos_mpts, bench_ret):
     df_ex = pd.DataFrame(excess_stats, columns=["ann_excess", "arith_excess", "IR", "winrate"])
     print(df_ex.describe(percentiles=[0.05, 0.5, 0.95]).loc[["5%", "50%", "95%", "mean"]].round(4))
     return df_ex
+
+
+# ---------------------------------------------------------------------------
+# Population 多路径收益/净值曲线（matplotlib 版，替代 plotly 防输出膨胀）
+# ---------------------------------------------------------------------------
+def plot_paths_curve(oos_mpts, cumprod=True, labels=None, color=None, lw=0.8,
+                     alpha=0.5, mean_line=True, figsize=(12, 6),
+                     title=None, save_path=None):
+    """Population 多路径收益曲线：cumprod 累计净值 / 原始收益率。
+
+    替代 plotly 系多路径可视化：plotly 会把整个 figure JSON 写入
+    notebook outputs（多路径下可膨胀至数十 MB，曾致 ipynb 超 VSCode
+    上限打不开）；matplotlib 输出为 PNG 位图，路径数再多体积恒定。
+
+    显示方式为 display(fig) + close：只渲染本图；不能用 plt.show()，
+    其语义是渲染全局所有打开的 figure，会把其他 cell 中挂起的图
+    一并带出（显示到错误位置，即图被"劫持"）。
+
+    Parameters
+    ----------
+    oos_mpts : Population | list[MultiPeriodPortfolio]
+        多路径组合集合；逐元素取 .returns_df（带时间索引的收益率 Series）
+    cumprod : bool
+        True → (1+r).cumprod() 累计净值（初始=1）；False → 原始收益率曲线
+    labels : list[str] | None
+        逐路径曲线图例标签，长度需与 oos_mpts 一致；提供时（且未显式
+        指定 color）各路径按色环逐条配色（超出色环换线型二次区分），
+        图例可逐条对应；图例另保留"跨路径均值"（当 mean_line=True）
+    color : str | None
+        None（默认）→ 有 labels 时逐条配色、无 labels 时统一 tab:blue；
+        显式指定 → 全部曲线同色
+    mean_line : bool，是否叠加跨路径均值粗线（黑）
+    save_path : str | None，给定则存图（dpi=150），可完全不占 notebook 输出
+
+    Returns
+    -------
+    None : 仅显示/存图，不返回对象（避免返回值被 notebook 二次渲染）
+    """
+    if labels is not None and len(labels) != len(oos_mpts):
+        raise ValueError(f"labels 长度需与 oos_mpts 一致：{len(labels)} vs {len(oos_mpts)}")
+    curves = []
+    for ptf in oos_mpts:
+        r = ptf.returns_df
+        curves.append((1 + r).cumprod() if cumprod else r)
+
+    # 配色：显式 color → 全部同色；无 labels → 统一 tab:blue；有 labels →
+    # 按 rcParams 色环逐条取色（项目 matplotlibrc 定义 6 色），超出色环用
+    # 线型（虚线/点线/点划线）二次区分，保证图例与曲线一一对应
+    if color is not None:
+        line_specs = [(color, "-")] * len(curves)
+    elif labels is None:
+        line_specs = [("tab:blue", "-")] * len(curves)
+    else:
+        cycle_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        linestyles = ["-", "--", ":", "-."]
+        line_specs = [(cycle_colors[i % len(cycle_colors)],
+                       linestyles[(i // len(cycle_colors)) % len(linestyles)])
+                      for i in range(len(curves))]
+
+    with plt.rc_context({"font.sans-serif": ["Microsoft YaHei", "SimHei", "DejaVu Sans"],
+                         "axes.unicode_minus": False}):
+        fig, ax = plt.subplots(figsize=figsize)
+        for i, y in enumerate(curves):
+            c, ls = line_specs[i]
+            ax.plot(y.index, y.values, color=c, linestyle=ls, lw=lw, alpha=alpha,
+                    label=None if labels is None else labels[i])
+        if mean_line:
+            mean_y = pd.concat(curves, axis=1).mean(axis=1)
+            ax.plot(mean_y.index, mean_y.values, color="black", lw=2.0,
+                    label="跨路径均值")
+        ax.set_title(title or ("OOS 多路径累计净值" if cumprod else "OOS 多路径收益率"))
+        ax.set_ylabel("净值（初始=1）" if cumprod else "收益率")
+        ax.grid(alpha=0.3)
+        if mean_line or labels is not None:
+            ax.legend()
+        if save_path:
+            fig.savefig(save_path, dpi=150)
+        # 精确显示本图并关闭：plt.show() 会渲染全局所有打开的 figure，
+        # 把其他 cell 中挂起的图一并带出——这正是图被"劫持"的根源
+        from IPython.display import display
+        display(fig)
+        plt.close(fig)
