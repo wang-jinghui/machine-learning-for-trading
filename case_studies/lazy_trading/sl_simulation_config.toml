@@ -1,0 +1,57 @@
+# 止损事件驱动模拟配置（sl_simulation.py 消费）
+#
+# 定位：在既有 WF+CPCV 嵌套搜索体系之上，做"每日收盘监控 + 止损事件提前
+#   重搜"的事件驱动模拟。参数空间 / 外层窗口 / 内层 CPCV / 采样器等搜索
+#   配置**不在此重复定义**——模块经 load_nested_config() 读取
+#   cpcv_parameter_search_config.toml，保证搜索逻辑与 wf-cpcv 相同；
+#   本文件只定义模拟调度与止损条件。
+#
+# 语义速览（详见 sl_simulation.py docstring）：
+#   决策日 d 收盘（数据截至 d）→ 次一交易日建仓；epoch 上限 = [cpcv]
+#   outer_test_size 天（走满即"到期"换仓，计时重启）；命中任一止损条件则
+#   当日收盘提前结束并重搜；两类 epoch 结束时都进入下一轮(重)搜——决策日
+#   与预计算 folds 折位对齐时零成本复用其参数，否则现场 CPCV 重搜。
+
+[sim]
+# start_date / end_date 可选（ISO 日期字符串）；缺省从预计算 folds 首折
+# 决策日的次一交易日开始，至数据末端结束。max_hold_days 缺省取
+# [cpcv].outer_test_size（当前 126 天）。
+# start_date = "2021-01-04"
+# end_date   = "2026-08-14"
+# max_hold_days = 126
+
+[stop_loss]
+# epoch 前 N 个交易日禁用止损（0 = 不限制；防重入后阈值边缘反复触发）
+min_epoch_days = 0
+
+# 止损条件列表（可插拔；任一命中即触发重搜，按列表顺序取首个命中者记账）：
+#   metric = "drawdown"    → 自本 epoch 入场以来的回撤：净值 / 入场以来净
+#                            值运行最大 - 1（负值）。入场首日即首个峰值观
+#                            测（dd=0，与 skfolio Portfolio.drawdowns 同
+#                            口径）——入场即亏但仍在回升期间 dd 为 0，该
+#                            场景由 cum_return 条件覆盖，故建议两者同时启用
+#   metric = "cum_return"  → 自本 epoch 入场以来累计收益（净值-1）
+#   metric = "rolling_std" → 本 epoch 内 W 日滚动波动：窗口日收益样本 std
+#                            （ddof=1，非年化，与 skfolio rolling_measure(
+#                            STANDARD_DEVIATION, W) 同口径）；annualize=true
+#                            时按 ×√252 年化后与阈值比较
+# op ∈ {"<=", ">="}；阈值口径为比例小数（-0.10 = 回撤/亏损 10%）。
+[[stop_loss.conditions]]
+name = "epoch_dd"
+metric = "drawdown"
+op = "<="
+threshold = -0.10
+
+[[stop_loss.conditions]]
+name = "epoch_cumloss"
+metric = "cum_return"
+op = "<="
+threshold = -0.08
+
+[[stop_loss.conditions]]
+name = "vol60"
+metric = "rolling_std"
+window = 60
+annualize = true
+op = ">="
+threshold = 0.25
