@@ -1210,3 +1210,149 @@ dtype: str
 [2026-09-15 01:57:41] OOS PSR Diagnose
 ========================================================================
 {'prob_loss': np.float64(0.0), 'psr_median': np.float64(1.0), 'psr_5': np.float64(1.0), 'sr_obs': np.float64(0.7568935298229307), 'T_total': 1638}
+
+========================================================================
+[2026-09-15 22:03:10] Ojective
+========================================================================
+mean(Annualized Sharpe Ratio)/2 - mean(MAXDD) + mean(SKEW)
+
+========================================================================
+[2026-09-15 22:03:10] Model Pipeline
+========================================================================
+Pipeline([
+        ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("extremes", SelectKExtremes(
+            k=params["extremes__k"], measure=ExtraRiskMeasure.KURTOSIS, highest=False)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=params["nondomin__min_n_assets"],
+            threshold=params["nondomin__threshold"],
+            fitness_measures=fm,
+        )),
+        ("correlate", DropCorrelated(threshold=params["correlate__threshold"])),
+        ("optimization", EqualWeighted()),
+    ])
+
+========================================================================
+[2026-09-15 22:34:05] Parameter Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 55, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.5, 'step': 0.1}, 'extremes__k': {'low': 0.1, 'high': 0.6, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-kurt'], 'train_size': {'low': 252, 'high': 756, 'step': 126}}
+
+========================================================================
+[2026-09-15 22:35:47] Search Parameter
+========================================================================
+{'test_size': 126, 'train_size': 882, 'n_test_folds': 2, 'n_jobs': 4, 'cv_n_jobs': 8, 'n_trials': 2000, 'patience': 100, 'sampler': 'tpe', 'min_delta': 0.0001, 'outer_purged_size': 1, 'outer_reduce_test': False, 'seed': 42, 'verbose': True}
+
+========================================================================
+[2026-09-16 00:59:38] Best Parameter
+========================================================================
+    fold   score     dsr  sr_obs  margin  train ASR  test ASR  nondomin__min_n_assets  nondomin__threshold  correlate__threshold  extremes__k  train_size             fitness  n_trials
+0      0  0.5913  0.0018  0.5913 -0.4556     0.9346    3.2496                      45                 -0.5                   0.1          0.6         378  mean-variance-kurt        64
+1      1  0.9912  0.4800  0.9912 -0.0305     1.9785    2.3668                      20                 -0.4                   0.4          0.3         252  mean-variance-kurt        53
+2      2  0.8173  0.6691  0.8173  0.0501     1.2697    0.3611                      45                 -0.4                   0.2          0.2         252  mean-variance-kurt        67
+3      3  0.6603  0.3830  0.6603 -0.0523     1.3650    1.2130                      15                 -0.3                   0.2          0.5         504  mean-variance-kurt        63
+4      4  1.3829  0.9763  1.3829  0.4101     0.0200    2.1300                      45                 -0.4                   0.1          0.4         252  mean-variance-kurt        75
+5      5  0.6768  0.1213  0.6768 -0.1806     0.8761    0.4322                      20                 -0.5                   0.1          0.5         378  mean-variance-kurt        67
+6      6  0.4911  0.0499  0.4911 -0.1930     0.2152    3.1777                      45                 -0.5                   0.1          0.6         504  mean-variance-kurt        63
+7      7  0.6590  0.1806  0.6590 -0.1327     1.4073   -0.3378                      45                 -0.4                   0.2          0.6         630  mean-variance-kurt        73
+8      8  0.5476  0.4775  0.5476 -0.0175     1.2225    1.1350                      35                 -0.3                   0.2          0.4         756  mean-variance-kurt        59
+9      9  1.3228  0.6576  1.3228  0.0763     1.0207    0.8947                      50                 -0.4                   0.1          0.6         252  mean-variance-kurt        56
+10    10  1.2608  0.6232  1.2608  0.0508     0.6313    1.2130                      55                 -0.4                   0.5          0.3         756  mean-variance-kurt        57
+11    11  0.4192  0.0001  0.4192 -0.5437     0.9821    3.3372                      30                 -0.3                   0.1          0.5         504  mean-variance-kurt        57
+12    12  1.0451  0.6208  1.0451  0.0394     3.3344   -0.1343                      55                 -0.4                   0.5          0.1         378  mean-variance-kurt        71
+
+========================================================================
+[2026-09-16 01:03:01] Top 10 参数组合OOS:ASR,MEAN,MAXDD
+========================================================================
+      annualized_sharpe_ratio  annualized_mean  max_drawdown
+rank                                                        
+1                    1.431498         0.138020      0.128659
+2                    1.591728         0.149679      0.094645
+3                    1.514304         0.145871      0.094645
+4                    1.571307         0.134842      0.094645
+5                    1.312606         0.132153      0.133331
+6                    1.508359         0.146140      0.138804
+7                    1.497012         0.144238      0.104177
+8                    1.122687         0.116232      0.133331
+9                    1.505152         0.150087      0.109553
+10                   1.515878         0.159012      0.136881
+
+========================================================================
+[2026-09-16 01:14:43] 消融实验
+========================================================================
+                                            说明  折数    天数  annualized_mean  annualized_sharpe_ratio  max_drawdown      skew   kurtosis
+臂                                                                                                                                    
+full                                   全管线（基准）  13  1638         0.138020                 1.431498      0.128659 -0.388295  10.432482
+no_extremes              无峰度预筛（剔除 extremes 步骤）  13  1638         0.119933                 1.654199      0.083098  0.090711   9.659384
+no_nondomin             无非支配筛选（剔除 nondomin 步骤）  13  1638         0.125851                 1.207506      0.163531 -0.607394   8.381958
+no_correlate             无去相关（剔除 correlate 步骤）  13  1638         0.096197                 0.732979      0.324569 -0.872841   9.304471
+no_extremes_correlate  剔除 extremes + correlate  13  1638         0.091261                 0.885527      0.229963 -0.625834   7.288459
+
+========================================================================
+[2026-09-16 01:19:45] OSS Summary
+========================================================================
+Mean                                     0.055%
+Annualized Mean                          13.80%
+Variance                                0.0037%
+Annualized Variance                       0.93%
+Semi-Variance                           0.0019%
+Annualized Semi-Variance                  0.47%
+Standard Deviation                        0.61%
+Annualized Standard Deviation             9.64%
+Semi-Deviation                            0.43%
+Annualized Semi-Deviation                 6.88%
+Mean Absolute Deviation                   0.42%
+CVaR at 95%                               1.37%
+EVaR at 95%                               2.86%
+Worst Realization                         5.49%
+CDaR at 95%                               9.93%
+MAX Drawdown                             12.21%
+Average Drawdown                          2.62%
+EDaR at 95%                              10.39%
+First Lower Partial Moment                0.21%
+Ulcer Index                               0.038
+Gini Mean Difference                      0.62%
+Value at Risk at 95%                      0.82%
+Drawdown at Risk at 95%                   8.73%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000001%
+Fourth Lower Partial Moment           0.000001%
+Skew                                    -38.83%
+Kurtosis                               1043.25%
+Sharpe Ratio                              0.090
+Annualized Sharpe Ratio                    1.43
+Sortino Ratio                              0.13
+Annualized Sortino Ratio                   2.01
+Mean Absolute Deviation Ratio              0.13
+First Lower Partial Moment Ratio           0.26
+Value at Risk Ratio at 95%                0.067
+CVaR Ratio at 95%                         0.040
+Entropic Risk Measure Ratio at 95%      0.00018
+EVaR Ratio at 95%                         0.019
+Worst Realization Ratio                  0.0100
+Drawdown at Risk Ratio at 95%            0.0063
+CDaR Ratio at 95%                        0.0055
+Calmar Ratio                             0.0045
+Average Drawdown Ratio                    0.021
+EDaR Ratio at 95%                        0.0053
+Ulcer Index Ratio                         0.015
+Gini Mean Difference Ratio                0.088
+Avg nb of Assets per Portfolio              6.8
+Number of Portfolios                         13
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-09-16 01:21:12] OOS PSR Diagnose
+========================================================================
+{'prob_loss': np.float64(0.0), 'psr_median': np.float64(1.0), 'psr_5': np.float64(1.0), 'sr_obs': np.float64(1.1593217209975548), 'T_total': 1638}
+
+========================================================================
+[2026-09-16 01:21:45] OOS vs 沪深300 相对收益分布
+========================================================================
+      ann_excess  arith_excess      IR  winrate
+5%        0.0479        0.0384  0.2453   0.5171
+50%       0.0782        0.0705  0.4460   0.5275
+95%       0.1072        0.1011  0.6379   0.5373
+mean      0.0779        0.0701  0.4444   0.5270
