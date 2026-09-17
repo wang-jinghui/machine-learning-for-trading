@@ -65,7 +65,7 @@ import numpy as np
 import pandas as pd
 from skfolio import MultiPeriodPortfolio, Portfolio, RiskMeasure
 
-from cpcv_analysis import calc_dsr
+from cpcv_analysis import empirical_deflate
 from cpcv_search_base import build_pipeline
 from wf_cpcv_search import load_nested_config, search_inner_params
 
@@ -221,7 +221,7 @@ def seed_cache_from_folds(folds) -> dict:
     for f in folds or []:
         d_day = pd.Timestamp(f["train"].returns_df.index[-1])
         cache[d_day] = {"params": dict(f["params"]), "score": float(f["score"]),
-                        "n_trials": int(f["n_trials"]), "dsr": float(f["dsr"]),
+                        "n_trials": int(f["n_trials"]), "p_luck": float(f["p_luck"]),
                         "source": "fold_reuse", "study": f.get("study"),
                         "decision_day": d_day}
     return cache
@@ -247,9 +247,9 @@ def _decide_params(X, decision_pos, cache, space, test_size, outer_train_size,
         print(f"决策日 {d_day.date()}: fresh CPCV 重搜 | 外层窗口 {len(X_tr)} 天 | "
               f"test_size={test_size} | n_trials={search_kwargs.get('n_trials')}")
     best, score, study = search_inner_params(X_tr, space, test_size, **search_kwargs)
-    audit = calc_dsr(study)
+    audit = empirical_deflate(study)
     rec = {"params": best, "score": float(score), "n_trials": int(audit["n_trials"]),
-           "dsr": float(audit["dsr"]), "source": "fresh", "study": study,
+           "p_luck": float(audit["p_luck"]), "source": "fresh", "study": study,
            "decision_day": d_day}
     cache[d_day] = rec
     return rec
@@ -325,7 +325,7 @@ def simulate_sl(X, folds=None, cfg=None, conditions=None, start_date=None,
         daily    : DataFrame 逐日监控（net_global/net_epoch/cum_epoch/dd_epoch/
                    vol_<W>/hit_<条件名>/trigger）
         epochs   : DataFrame 一行一 epoch（决策日/建仓/退出/天数/exit_reason/
-                   search_source/n_trials/dsr/参数/fit_ts/epoch 指标/换手率）
+                   search_source/n_trials/p_luck/参数/fit_ts/epoch 指标/换手率）
         triggers : DataFrame 止损触发明细（触发日/条件/触发时指标值）
         legs     : list[Portfolio]（每 epoch 一个 leg，compounded=True）
         mpt      : MultiPeriodPortfolio（全路径官方指标 / 净值 / 几何回撤）
@@ -485,7 +485,7 @@ def simulate_sl(X, folds=None, cfg=None, conditions=None, start_date=None,
                        "entry": dates[entry_pos], "exit": dates[exit_pos],
                        "n_days": exit_pos - entry_pos + 1, "exit_reason": exit_reason,
                        "search_source": rec["source"], "n_trials": rec["n_trials"],
-                       "is_score": round(rec["score"], 4), "dsr": round(rec["dsr"], 4),
+                       "is_score": round(rec["score"], 4), "p_luck": round(rec["p_luck"], 4),
                        "fit_ts": p.pop("train_size", None), "fitness": fitness, **p,
                        "epoch_cum_return": round(epoch_ret, 4),
                        "epoch_max_drawdown": round(float(leg.max_drawdown), 4),
