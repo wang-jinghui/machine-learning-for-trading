@@ -7,7 +7,7 @@
 #   数据上试 N 次选最优 → 选择偏差校正 → 独立 OOS 验证"）：CPCV 验证块
 #   分数均值既非拟合 IS 也非时间外推 OOS，与校正工具口径失配；本方案把
 #   选择分数退回拟合 IS，每折 (IS, OOS) 对与校正工具定义一一对应。
-#   代价：验证集正则化被移除（IS 选参天生更过拟合），由"DSR 低 + OOS
+#   代价：验证集正则化被移除（IS 选参天生更过拟合），由"p_luck 高 + OOS
 #   显著下降 → 过拟合"判据暴露。
 #
 # [param_space] + [nested_space] 与 cpcv_parameter_search_config.toml
@@ -45,7 +45,7 @@ outer_reduce_test = true       # 不足 test_size 的尾段缩短保留并照常
 # 每折内层 Optuna（单层 trial 并行；无内层 CPCV，无 cv_n_jobs 第二层）
 n_trials = 100                 # 每折 trial 数
 sampler = "tpe"                # "tpe"(自适应引导) | "random"(参数空间独立随机采样,
-                               # random 模式供 DSR deflate——trial 分数序列为 iid 观测; 早停自动禁用)
+                               # random 模式供 empirical_deflate——trial 分数序列为 iid 观测; 早停自动禁用)
 patience = 50                  # 早停：连续无有效改善 trial 数
 min_delta = 0.0001             # 早停：有效改善的最小增量
 n_jobs = 12                    # optuna trial 级并行（峰值并发 = n_jobs）

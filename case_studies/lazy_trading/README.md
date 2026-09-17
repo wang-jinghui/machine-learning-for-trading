@@ -36,7 +36,7 @@ cfg = load_nested_config()    # 空间 + 搜索/压测窗口 + Purge/Embargo + �
 
 folds = nested_adaptive_search(X, space=cfg["space"], **cfg["search_kwargs"])
 # folds: list[{fold, params, score, test, train, "train ASR", "test ASR",
-#             dsr, sr_obs, margin, max_p95, n_trials, study}]
+#             p_luck, margin, max_p95, n_trials, study}]
 ```
 
 > 若搜索已完成（实验日志/notebook 缓存中），**直接复用 fold_results 对象**，跳过重跑——
@@ -46,8 +46,8 @@ folds = nested_adaptive_search(X, space=cfg["space"], **cfg["search_kwargs"])
 
 | 步 | 检验 | Checklist | 函数 | 产出 | 终止条件 |
 |---|---|---|---|---|---|
-| 1 | IS 选择偏差与 Top-K 审计 | 2.1 / 2.3 | `summarize_fold_params` + `summarize_top_k_params` | 折级 DSR + 候选表 | DSR 普遍低 + gap 大 → 回调参 |
-| 2 | 过拟合判据（DSR vs OOS 对照） | 2.1 / 3.2 | fold 内置字段 | 折级表 | "DSR 低 + test ASR 显著掉" |
+| 1 | IS 选择偏差与 Top-K 审计 | 2.1 / 2.3 | `summarize_fold_params` + `summarize_top_k_params` | 折级 p_luck + 候选表 | p_luck 普遍高 + gap 大 → 回调参 |
+| 2 | 过拟合判据（p_luck vs OOS 对照） | 2.1 / 3.2 | fold 内置字段 | 折级表 | "p_luck 高 + test ASR 显著掉" |
 | 3 | Top-K 候选 OOS 多路径压测 | 3.1 | `topk_paths_eval` | paths / audit / frames | rank1 与 2~k 差距悬殊 → 警惕孤峰 |
 | 4 | 单参数敏感性曲线 | 4.1 | `sensitivity_curves` | 宽表（画折线） | 孤峰 → 回调参；高原 → 通过 |
 | 5 | 双参数热力图 | 4.2 | `sensitivity_heatmap` | 逐折网格 + mean 帧 | 联合孤峰 → 回调参 |
@@ -58,11 +58,11 @@ folds = nested_adaptive_search(X, space=cfg["space"], **cfg["search_kwargs"])
 
 ## 3. 各步操作手册
 
-### Step 1｜IS 审计：每折 DSR + Top-K 候选（checklist 2.1 / 2.3）
+### Step 1｜IS 审计：每折 p_luck + Top-K 候选（checklist 2.1 / 2.3）
 
 ```python
 fold_df = summarize_fold_params(folds)            # 行 = fold
-print(fold_df[["fold", "score", "dsr", "sr_obs", "margin",
+print(fold_df[["fold", "score", "p_luck", "margin",
                "n_trials", "train ASR", "test ASR"]])
 
 topk = summarize_top_k_params(folds, k=5)         # 行 = (fold, rank)
@@ -70,23 +70,23 @@ print(topk[topk["rank"] <= 2])                    # 每折 top1/top2 候选 + ga
 ```
 
 判读：
-- `dsr` = 该折最优分数超过"纯运气挑最优"基准的经验概率（H0 噪声 MC deflate，N = 参数去重后的真实试验数）。
-  `margin = sr_obs − E[max_N]`，`max_p95` 为运气基准 95% 分位。
+- `p_luck` = 该折最优分数是"纯运气挑出"的经验概率（经验零分布 GPD 上尾 deflate，N = 参数去重后的真实试验数）；越高越可疑。
+  `margin = score − E[max_N]`，`max_p95` 为运气基准 95% 分位。
 - `gap2top1`（summarize_top_k_params 的列）= IS 侧 top1 与 top2 的分数落差：
   落差小 → 参数处在平台（好信号）；落差大 → top1 可能是运气孤峰（坏信号）。
 - 目标函数 = mean path 年化夏普（`inner_cpcv_score`，单值，Optuna 约束）。
 
-### Step 2｜过拟合判据：DSR 低 + OOS 衰减（checklist 3.2）
+### Step 2｜过拟合判据：p_luck 高 + OOS 衰减（checklist 3.2）
 
 ```python
 df = summarize_fold_params(folds).copy()
 df["WFE"] = df["test ASR"] / df["train ASR"]      # 每折 IS→OOS 衰减比
-df["flag"] = (df["dsr"] < 0.5) & (df["WFE"] < 0.5)   # 双低 = 过拟合嫌疑折
-print(df[["fold", "dsr", "train ASR", "test ASR", "WFE", "flag"]])
+df["flag"] = (df["p_luck"] > 0.5) & (df["WFE"] < 0.5)   # 运气嫌疑高 + 衰减 = 过拟合嫌疑折
+print(df[["fold", "p_luck", "train ASR", "test ASR", "WFE", "flag"]])
 ```
 
 - Checklist 3.2 判据：WFE > 0.5 为稳健泛化（多数折满足）。
-- "DSR 低 + OOS 显著下降" = 内层选择偏差校正后无真实优势 + 样本外掉队 → 该折结论不可信，
+- "p_luck 高 + OOS 显著下降" = 内层选择偏差校正后无真实优势 + 样本外掉队 → 该折结论不可信，
   属**策略逻辑问题而非参数问题**，回改须谨慎（见铁律 1）。
 
 ### Step 3｜Top-K 候选 OOS 多路径压测（checklist 3.1）
@@ -192,8 +192,8 @@ out["samples"]                                    # 行 (fold, sample)；含扰�
 
 | 信号 | 判读 | 动作 |
 |---|---|---|
-| `dsr` 高（≥ ~0.9） | IS 最优不是运气 | 可信 |
-| `dsr` 低（< 0.5） | 最优可能纯运气 | 看 margin / 回调参 |
+| `p_luck` 低（≤ ~0.1） | IS 最优不是运气 | 可信 |
+| `p_luck` 高（> 0.5） | 最优可能纯运气 | 看 margin / 回调参 |
 | `WFE = test/IS ASR > 0.5` | 泛化正常 | 可信 |
 | `WFE < 0.5` 多数折 | OOS 显著衰减 | 策略逻辑审计 |
 | `gap2top1` 小 | 候选平台宽 | 好（高原） |
@@ -206,7 +206,7 @@ out["samples"]                                    # 行 (fold, sample)；含扰�
 
 - 5.2 时间延迟扰动：低频策略有意排除。
 - 6.2 交易成本/滑点、容量评估、极端行情压力测试。
-- 6.3 真 PBO（<0.3）：现有 DSR（IS 侧 deflate）与 OOS 侧 PSR/LHS 诊断（`cpcv_analysis.diagnose_oos_lhs`）非真 PBO，需 CSCV 另算。
+- 6.3 真 PBO（<0.3）：现有 IS 侧经验零分布 deflate（`empirical_deflate`）与 OOS 侧 PSR/LHS 诊断（`cpcv_analysis.diagnose_oos_lhs`）非真 PBO，需 CSCV 另算。
 - 6.3 参数高原"通过"判定：由 2.3 + 3.1 + 4.1/4.2 交叉印证后人工综合。
 
 ## 6. 模块速查
@@ -217,7 +217,7 @@ out["samples"]                                    # 行 (fold, sample)；含扰�
 | `wf_cpcv_search.py` | 嵌套搜索主模块：配置加载、`inner_cpcv_score`、`search_inner_params`、`nested_adaptive_search`、`run_params_on_fold`、`summarize_fold_params`、`summarize_top_k_params`、`adaptive_multi_paths`、`derive_outer_window` |
 | `wf_cpcv_robustness.py` | 后验稳健性：`perturbation_mc`（5.1/5.3）、`sensitivity_curves`（4.1）、`sensitivity_heatmap`（4.2）、`topk_paths_eval`（3.1）；附 CLI（冒烟用） |
 | `wf_cpcv_ablation.py` | 固定参数消融（4.3）：`ablate` / `arm_fold_paths` / `build_variant_pipeline`；附 CLI |
-| `cpcv_analysis.py` | 分析件：`calc_dsr`（DSR deflate）、`top_trials`/`trial_param_key`（Top-K 去重口径）、`fold_paths_frame`/`extract_metrics`（skfolio 属性抽取）、`turnover_series`（换手）、LHS/PSR 诊断 |
+| `cpcv_analysis.py` | 分析件：`empirical_deflate`（复合目标经验零分布 deflate）/ `efron_null_fdr`（per-trial p/local fdr）、`calc_dsr`（旧 SR 类口径）、`top_trials`/`trial_param_key`（Top-K 去重口径）、`fold_paths_frame`/`extract_metrics`（skfolio 属性抽取）、`turnover_series`（换手）、LHS/PSR 诊断 |
 | `cpcv_parameter_search_config.toml` | 全部配置：`[param_space]`+`[nested_space]`（train_size）、`[cpcv]`（窗口、n_test_folds、Purge/Embargo、n_trials、sampler、seed） |
 
 冒烟 CLI（小预算自检，完整检验请在 notebook 会话内复用已完成的搜索）：

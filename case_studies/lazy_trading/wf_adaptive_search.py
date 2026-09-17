@@ -12,8 +12,9 @@ wf_cpcv 完全同构；唯一区别是**选择分数**：每折在训练段上�
 IS 也非时间外推 OOS，与校正工具口径失配；本模块把选择分数退回拟合 IS，
 每折 (IS, OOS) 对与校正工具定义一一对应：
 
-* DSR：study trial 分数（IS 拟合分数序列）经 calc_dsr H0 噪声 deflate；
-* 判据："DSR 低 + OOS 显著下降 → 过拟合"（与 wf_cpcv 同形）；
+* 逐折 deflate：study trial 分数（IS 拟合分数序列）经 empirical_deflate
+  经验零分布（GPD 上尾）校正；
+* 判据："p_luck 高 + OOS 显著下降 → 过拟合"（与 wf_cpcv 同形）；
 * 代价：验证集正则化被移除（IS 选参天生更过拟合），由上述判据暴露——
   检测体系的价值正是让"该杀"变得可执行。
 
@@ -44,9 +45,10 @@ from cpcv_search_base import (
     suggest_from_space,
 )
 
-# 逐折 IS deflate：study trial 分数(IS 拟合 ASR)经 calc_dsr H0 噪声基准
-# 校正选择偏差, 产出 dsr/margin 等判据量与 OOS test ASR 对照(过拟合判定)
-from cpcv_analysis import calc_dsr
+# 逐折 IS deflate：study trial 分数(IS 拟合 ASR)经 empirical_deflate 经验
+# 零分布(GPD 上尾)校正选择偏差, 产出 p_luck/margin 等判据量与 OOS test
+# ASR 对照(过拟合判定)
+from cpcv_analysis import empirical_deflate
 
 # wf_cpcv 冻结模块的公共件（只读引用——折位对齐/应用入口与 wf_cpcv
 # 是同一份实现, 保证两套框架的 fold 索引与口径严格对齐）:
@@ -148,8 +150,8 @@ def search_is_params(X_tr, space, n_trials=100, n_jobs=12, patience=50,
     inner_is_score（IS 拟合, 无内层 CPCV 展开）——单层并行, 峰值并发 =
     n_jobs（无 cv_n_jobs 第二层）。
     sampler : "tpe"（自适应引导采样, 挂早停）| "random"（参数空间独立随机
-        采样——DSR deflate 的 iid 前提, 早停自动禁用, 跑满 n_trials）。
-    study 保留每次 trial 的 params/value 全记录（供逐折 DSR deflate：
+        采样——empirical_deflate 的 iid 前提, 早停自动禁用, 跑满 n_trials）。
+    study 保留每次 trial 的 params/value 全记录（供逐折 empirical_deflate：
     N=unique trials、trial 分数序列取自 study）。
     """
     def objective(trial):
@@ -183,20 +185,20 @@ def adaptive_wf_search(X, test_size=126, train_size=630, space=None,
         space["train_size"] : 每折内 IS 拟合窗口搜索维度（天，≤ 外层
             train-test_size，保证拟合窗不越出训练段）
     外层折间串行，每折 Optuna trial 级并行（峰值并发 = n_jobs，单层）。
-    sampler : "tpe" | "random"（random 为 DSR deflate 的 iid 前提，早停
-    自动禁用，见 search_is_params；两模式返回结构一致）。
+    sampler : "tpe" | "random"（random 为 empirical_deflate 的 iid 前提，
+    早停自动禁用，见 search_is_params；两模式返回结构一致）。
 
     Returns
     -------
     list : 与 nested_adaptive_search 同构的 fold_results
         [{fold, params, score, test, train, "train ASR", "test ASR",
-          dsr, sr_obs, margin, max_p95, n_trials, study}]
+          p_luck, margin, max_p95, n_trials, study}]
         ——score = 该折 IS 拟合分数（Optuna best value，选择依据；WFE
-        判读用 test ASR / score）。dsr/sr_obs/margin/max_p95/n_trials
-        为该折 study 的 calc_dsr(H0 噪声 deflate) 摘要——与 "test ASR"
-        (OOS) 对照即 "DSR 低 + OOS 显著下降 → 过拟合" 判据；study 为
-        该折 optuna study（trial 级全记录，可复算 deflate）。检测流与
-        wf_cpcv 同形直接消费。
+        判读用 test ASR / score）。p_luck/margin/max_p95/n_trials
+        为该折 study 的 empirical_deflate（经验零分布 GPD 上尾）摘要
+        ——与 "test ASR"(OOS) 对照即 "p_luck 高 + OOS 显著下降 → 过拟合"
+        判据；study 为该折 optuna study（trial 级全记录，可复算 deflate）。
+        检测流与 wf_cpcv 同形直接消费。
     """
     if space is None:
         space = load_space(DEFAULT_CONFIG)
@@ -219,14 +221,14 @@ def adaptive_wf_search(X, test_size=126, train_size=630, space=None,
             X, i, best, test_size=test_size, train_size=train_size,
             purged_size=outer_purged_size, reduce_test=outer_reduce_test)
         test_ptf.name = f"Fold{i}"   # predict 不接受 portfolio_params(0.20.x), 预测后设置名称
-        # 3) 该折 IS deflate：study trial 分数(IS 拟合分数序列) → 判据量,
+        # 3) 该折 IS deflate：study trial 分数(经验零分布 GPD 上尾) → 判据量,
         #    与下面 test ASR(OOS) 对照判定过拟合
-        d = calc_dsr(study)
+        d = empirical_deflate(study)
         folds.append({"fold": i, "params": best, "score": score,
                       "test": test_ptf, "train": train_ptf,
                       "train ASR": train_ptf.annualized_sharpe_ratio,
                       "test ASR": test_ptf.annualized_sharpe_ratio,
-                      "dsr": d["dsr"], "sr_obs": d["sr_obs"],
+                      "p_luck": d["p_luck"],
                       "margin": d["margin"], "max_p95": d["max_p95"],
                       "n_trials": d["n_trials"],
                       "study": study})   # trial 级全记录(params/value), 供复算 deflate

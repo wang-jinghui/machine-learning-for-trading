@@ -146,9 +146,9 @@
 | **1.2 OOS 绝对封存** + 起止日期记录 | 已落地 | 折位对齐公共推导 `wf_cpcv_search.derive_outer_window`；fold 起止由 notebook 打印审计（折内 test Portfolio 自带日期） |
 | **1.3 内层 CPCV**：子集数 S / Purge / Embargo 显式化 | 已落地 | `inner_purged_size`/`inner_embargo_size` 参数化贯穿 `nested_adaptive_search`→`search_inner_params`→`inner_cpcv_score`→`adaptive_multi_paths`；toml `[cpcv]` 两键 + `load_nested_config` 下发；n_folds 按窗口动态、n_test_folds 可配 |
 | **2.1 目标函数**：单值 + 无 OOS 信息 | 已落地 | `inner_cpcv_score` 返回 mean path 年化夏普（Optuna 单值约束）；仅触碰内层 train+test 窗，外层 test 永不入内 |
-| **2.1 DSR 路径级记录/选择偏差校正** | 已落地 | 每折 study 全记录 → `cpcv_analysis.calc_dsr`（H0 噪声 MC deflate：dsr/margin/sr_obs/max_p95/n_trials）；路径分布留痕于 study.trials |
-| **2.2 搜索执行**（范围粒度/采样器/早停） | 已落地 | `suggest_from_space` 统一采样；`nested_adaptive_search`：TPE/random 可切换（random 为 DSR iid 前提、自动禁早停）、`patience`/`min_delta` 早停、`n_jobs`×`cv_n_jobs` 双层并行 |
-| **2.3 Top-K 候选参数筛选**（K=3~5） | 已落地 | `wf_cpcv_search.summarize_top_k_params`：每折 study 按分数降序、参数去重取前 K（与 `calc_dsr` 同去重口径），含 `gap2top1`（IS 侧高原/孤峰信号）；Top 参数 dsR 对照每折 `dsr/margin` |
+| **2.1 DSR 路径级记录/选择偏差校正** | 已落地 | 每折 study 全记录 → `cpcv_analysis.empirical_deflate`（经验零分布 GPD 上尾 deflate：p_luck/margin/max_p95/n_trials；复合目标下替代 calc_dsr）；路径分布留痕于 study.trials |
+| **2.2 搜索执行**（范围粒度/采样器/早停） | 已落地 | `suggest_from_space` 统一采样；`nested_adaptive_search`：TPE/random 可切换（random 为 empirical_deflate iid 前提、自动禁早停）、`patience`/`min_delta` 早停、`n_jobs`×`cv_n_jobs` 双层并行 |
+| **2.3 Top-K 候选参数筛选**（K=3~5） | 已落地 | `wf_cpcv_search.summarize_top_k_params`：每折 study 按分数降序、参数去重取前 K（与 `empirical_deflate` 同去重口径），含 `gap2top1`（IS 侧高原/孤峰信号）；Top 参数对照每折 `p_luck/margin` |
 | **3.1 候选参数外测** | 已落地 | 每折生产参数自动普通 OOS 单测（`run_params_on_fold`，nested 折末同入口）；Top2~K 候选全部进 `wf_cpcv_robustness.topk_paths_eval`（CPCV 多路径压测）做 OOS 对比——**评估不选参**（OOS 封印纪律），仅印证参数高原 |
 | **3.2 WFE 衰减比 > 0.5 审计** | 部分 | `summarize_fold_params` 已产出 train ASR / test ASR 对照列，WFE = test/train 需 notebook 内计算并判定；异常陡升与换手审计未自动化 |
 | **4.1 单参数敏感性 ±10~30%** | 已落地 | `wf_cpcv_robustness.sensitivity_curves`：默认 ±10/20/30% 档位 × 全部数值参数（含 `train_size`，fitness 固定每折 top1），step 圆整/边界钳制；绩效形状读图判高原/孤峰；交易行为一致性（换手）见 `cpcv_analysis.turnover_series`（notebook 按需调用） |
@@ -160,7 +160,7 @@
 | **5.3 结果判定**（≥80% / >0 / >0） | 已落地 | `verdict` 表按判据逐指标自动判定（同折扰动样本共享 OOS 段、非独立——按"参数族评估"语义解读） |
 | **6.1 预注册/可复现** | 部分 | 参数空间 `[param_space]`+`[nested_space]`、搜索配置（含 Purge/Embargo）、seed 均在 toml 固定可审计；策略逻辑文档化、Git 提交纪律为人工项 |
 | **6.2 风控底线**（成本/容量/压力测试） | 未落地 | 成本/滑点、容量评估、极端行情压力测试尚未工程化，交付前需另行实现或人工完成 |
-| **6.3 PBO < 0.3** | 未落地 | 现有为逐折 IS 侧 DSR deflate（`calc_dsr`）与 OOS 侧 PSR/LHS 诊断（`cpcv_analysis.diagnose_oos_lhs`），非真 PBO；PBO 需 CSCV 框架另算 |
+| **6.3 PBO < 0.3** | 未落地 | 现有为逐折 IS 侧经验零分布 deflate（`empirical_deflate`）与 OOS 侧 PSR/LHS 诊断（`cpcv_analysis.diagnose_oos_lhs`），非真 PBO；PBO 需 CSCV 框架另算 |
 | **6.3 参数高原检验** | 部分 | IS 侧 `gap2top1`（2.3）+ OOS 侧 Top-K 压测对比（3.1）+ 4.1/4.2 曲线热力图交叉印证；"通过"判定为人工综合 |
 | **6.3 蒙特卡洛验证通过** | 已落地 | 5.1 扰动 + 5.3 `verdict` 自动判定 |
 | 消融/扰动指标口径 | 已落地 | 全部取 skfolio 现成属性（`cpcv_analysis.fold_paths_frame` / `extract_metrics` 抽取），不自算 |

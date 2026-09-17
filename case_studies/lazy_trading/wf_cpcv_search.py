@@ -71,10 +71,10 @@ from cpcv_search_base import (
     suggest_from_space,
 )
 
-# 逐折 IS deflate：study trial 分数(mean path ASR)经 calc_dsr H0 噪声基准
-# 校正选择偏差, 产出 dsr/margin 等判据量与 OOS test ASR 对照(过拟合判定);
-# top_trials 用于 Top-K 候选提取(与 calc_dsr 同去重口径)
-from cpcv_analysis import calc_dsr, top_trials
+# 逐折 IS deflate：study trial 分数(mean path ASR)经 empirical_deflate 经验
+# 零分布(GPD 上尾)校正选择偏差, 产出 p_luck/margin 等判据量与 OOS test ASR
+# 对照(过拟合判定); top_trials 用于 Top-K 候选提取(同去重口径)
+from cpcv_analysis import empirical_deflate, top_trials
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG = BASE_DIR / "cpcv_parameter_search_config.toml"
@@ -130,7 +130,7 @@ def load_nested_config(config_path=DEFAULT_CONFIG) -> dict:
         n_jobs=cpcv.get("n_jobs", 4),          # 内层 optuna trial 级并行
         cv_n_jobs=cpcv.get("cv_n_jobs", 4),    # 单 trial 内 CPCV 并行
         n_trials=cpcv.get("n_trials", 40),
-        sampler=cpcv.get("sampler", "tpe"),    # 内层采样器: "tpe"(自适应) | "random"(独立采样, DSR deflate 前提)
+        sampler=cpcv.get("sampler", "tpe"),    # 内层采样器: "tpe"(自适应) | "random"(独立采样, empirical_deflate 前提)
         patience=cpcv.get("patience", 50),     # 早停：连续无有效改善 trial 数
         min_delta=cpcv.get("min_delta", 1e-4), # 早停：有效改善的最小增量
         seed=cpcv.get("seed", 42),
@@ -231,8 +231,8 @@ def search_inner_params(X_tr, space, test_size, n_test_folds=2, n_jobs=4,
 
     space : walkforward 同构参数空间（管道前缀键 + train_size 增量键）。
     sampler : "tpe"（自适应引导采样）| "random"（参数空间独立随机采样）。
-        random 模式下各 trial 相互独立——这是 DSR deflate 的 iid 前提，
-        故早停（StopWhenNoImprovement）自动禁用，跑满 n_trials。
+        random 模式下各 trial 相互独立——这是 empirical_deflate 经验零分布
+        的 iid 前提，故早停（StopWhenNoImprovement）自动禁用，跑满 n_trials。
     并行度分两层（与 walkforward run_optuna 对齐）：
         n_jobs : optuna trial 级并行（study.optimize）
         cv_n_jobs : 单 trial 内 CPCV cross_val_predict 并行
@@ -244,8 +244,8 @@ def search_inner_params(X_tr, space, test_size, n_test_folds=2, n_jobs=4,
     -------
     (best_params, best_value, study) : best_params 为 {键: 值}，
         fitness_measures 为注册表名称字符串 —— 与 walkforward 搜索结果同形、
-        可序列化；study 保留每次 trial 的 params/value 全记录（供逐折 DSR
-        deflate：N=unique trials、trial 分数序列取自 study）
+        可序列化；study 保留每次 trial 的 params/value 全记录（供逐折
+        empirical_deflate：N=unique trials、trial 分数序列取自 study）
     """
     def objective(trial):
         # 与 walkforward 相同的采样逻辑（range→int/float, choice→categorical）
@@ -328,8 +328,8 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
     外层折间串行，峰值并发 ≈ n_jobs × cv_n_jobs。
     inner_cv 按训练子窗口动态构建（不外部传入）。
     sampler : "tpe"（自适应引导采样）| "random"（参数空间独立随机采样）；
-        random 模式是 DSR deflate 的 iid 前提（早停自动禁用，跑满 n_trials，
-        见 search_inner_params），两模式返回结构一致。
+        random 模式是 empirical_deflate 经验零分布的 iid 前提（早停自动禁用，
+        跑满 n_trials，见 search_inner_params），两模式返回结构一致。
 
     NOTE: 搜索（默认 reduce_test=True）会把不足 test_size 的尾段缩短保留并
     照常搜参；压测阶段若 reduce_test=False 则不产出该尾段 → 尾折参数自然
@@ -339,13 +339,14 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
     Returns
     -------
     list : [{fold, params, score, test, train, "train ASR", "test ASR",
-             dsr, sr_obs, margin, max_p95, n_trials, study}]；params 为
+             p_luck, margin, max_p95, n_trials, study}]；params 为
         walkforward 同形参数（fitness_measures 为名称字符串，可序列化）；
-        dsr/sr_obs/margin/max_p95/n_trials 为该折 study 的 calc_dsr(H0 噪声
-        deflate) 摘要——dsr = 最优分数超过纯运气基准的概率, sr_obs = best
-        trial 的 val 分数, margin = sr_obs − E[max_N], max_p95 = 运气最大
-        分布 95% 分位, n_trials = params 去重后的真实试验次数；与 "test
-        ASR"(OOS) 对照即 "DSR 低 + OOS 显著下降 → 过拟合" 判据；study 为
+        p_luck/margin/max_p95/n_trials 为该折 study 的 empirical_deflate
+        （经验零分布 GPD 上尾 deflate）摘要——p_luck = 最优分是纯运气挑出
+        的概率（越高越可疑；旧口径 dsr = 1 − p_luck，因分数非 Sharpe 不再
+        沿用 DSR 命名）, margin = score − E[max_N], max_p95 = 运气最大分布
+        95% 分位, n_trials = params 去重后的真实试验次数；与 "test ASR"
+        (OOS) 对照即 "p_luck 高 + OOS 显著下降 → 过拟合" 判据；study 为
         该折 optuna study（trial 级 params/value 全记录，可复算 deflate）
     """
     if space is None:
@@ -373,14 +374,14 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
             X, i, best, test_size=test_size, train_size=train_size,
             purged_size=outer_purged_size, reduce_test=outer_reduce_test)
         test_ptf.name = f"Fold{i}"   # predict 不接受 portfolio_params(0.20.x), 预测后设置名称
-        # 3) 该折 IS deflate: study trial 分数(H0 噪声基准) → 判据量,
+        # 3) 该折 IS deflate: study trial 分数(经验零分布 GPD 上尾) → 判据量,
         #    与下面 test ASR(OOS) 对照判定过拟合
-        d = calc_dsr(study)
+        d = empirical_deflate(study)
         folds.append({"fold": i, "params": best, "score": score,
                       "test": test_ptf, "train": train_ptf,
                       "train ASR": train_ptf.annualized_sharpe_ratio,
                       "test ASR": test_ptf.annualized_sharpe_ratio,
-                      "dsr": d["dsr"], "sr_obs": d["sr_obs"],
+                      "p_luck": d["p_luck"],
                       "margin": d["margin"], "max_p95": d["max_p95"],
                       "n_trials": d["n_trials"],
                       "study": study})   # trial 级全记录(params/value), 供复算 deflate
@@ -397,12 +398,12 @@ def summarize_fold_params(fold_results):
     ----------
     fold_results : list
         nested_adaptive_search 返回的 folds（每折 dict：fold / params / score /
-        train ASR / test ASR 与 calc_dsr 摘要 dsr / sr_obs / margin / n_trials）
+        train ASR / test ASR 与 empirical_deflate 摘要 p_luck / margin / n_trials）
 
     Returns
     -------
     pd.DataFrame
-        列 = fold | score | dsr | sr_obs | margin | train ASR | test ASR
+        列 = fold | score | p_luck | margin | train ASR | test ASR
         | 各参数键 | n_trials；fitness_measures 展平为 fitness 字符串列
         （便于一眼对比各折选了哪个 measure 组合）
     """
@@ -412,7 +413,7 @@ def summarize_fold_params(fold_results):
         p["fitness"] = str(p["nondomin__fitness_measures"])
         del p["nondomin__fitness_measures"]
         rows.append({"fold": f["fold"], "score": round(f["score"], 4),
-                     "dsr": round(f["dsr"], 4), "sr_obs": round(f["sr_obs"], 4),
+                     "p_luck": round(f["p_luck"], 4),
                      "margin": round(f["margin"], 4),
                      "train ASR": round(f["train ASR"], 4),
                      "test ASR": round(f["test ASR"], 4), **p,
@@ -424,7 +425,7 @@ def summarize_top_k_params(fold_results, k=5):
     """每折 Top-K 候选审计表（IS 侧，纯记录不触 OOS）。
 
     从每折 study 的 trial 记录按分数降序、参数去重取前 k 个候选（去重
-    口径与 calc_dsr 的 N 统计一致，见 cpcv_analysis.top_trials）。
+    口径与 empirical_deflate 的 N 统计一致，见 cpcv_analysis.top_trials）。
     top1 即生产参数（nested_adaptive_search 折末所用）；top2~k 候选供
     参数高原/孤峰的 OOS 侧压测对比（评估不选参，不消耗 OOS）。
     gap2top1 = top1 分数 − 当前候选分数：落差小 = 参数高原信号，悬崖 =
@@ -553,7 +554,7 @@ def optuna_study(seed=42, direction="maximize", sampler="tpe"):
     """新建 optuna study（seed 固定 + 日志降噪）。
 
     sampler : "tpe" → TPESampler（自适应引导采样）；
-              "random" → RandomSampler（独立随机采样，DSR deflate 的 iid 前提）
+              "random" → RandomSampler（独立随机采样，empirical_deflate 的 iid 前提）
     """
     import optuna
     optuna.logging.set_verbosity(optuna.logging.WARNING)
