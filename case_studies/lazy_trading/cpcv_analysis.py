@@ -7,10 +7,12 @@
 用法::
 
     # 段单元采样（段单元由 wf_cpcv_search.build_test_parts 产出）
-    from cpcv_analysis import discrete_lhs_safe, diagnose_oos_lhs, calc_dsr
+    from cpcv_analysis import discrete_lhs_safe, diagnose_oos_lhs, empirical_deflate
     samples = discrete_lhs_safe(all_test_parts, n_samples=1000, seed=42)
     res = diagnose_oos_lhs(samples)
-    dsr = calc_dsr(fold["study"])   # 每折 IS 搜索 deflate（study 由 nested_adaptive_search 返回）
+    d = empirical_deflate(fold["study"])        # 复合目标每折 deflate（键: p_luck/margin/...）
+    t = efron_null_fdr(fold["study"])["table"]  # per-trial p / local fdr / q_bh / q_by
+    # calc_dsr(fold["study"])                   # 旧口径仍保留, 仅适用 SR 类目标, 复合目标勿用
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.stats import skew, kurtosis, norm
+from scipy.stats import skew, kurtosis, norm, genpareto, gaussian_kde
 from scipy.stats.qmc import LatinHypercube
 from skfolio import MultiPeriodPortfolio
 
@@ -162,9 +164,10 @@ def diagnose_oos_lhs(lhs_paths, annual_factor=252, risk_free_rate=0.02):
 def trial_param_key(params: dict) -> tuple:
     """参数组合 → 去重键（float 值 round 到 9 位消除采样浮点残差，str/int 原样）。
 
-    与 calc_dsr 的 N 统计同口径：随机/TPE 采样会重复命中同一参数组，重复
-    不增加候选信息，去重后才能得到真实试验次数 N。供 calc_dsr 与 top_trials
-    （Top-K 提取）共用，保证两处去重口径一致。
+    与 calc_dsr / empirical_deflate 的 N 统计同口径：随机/TPE 采样会重复
+    命中同一参数组，重复不增加候选信息，去重后才能得到真实试验次数 N。
+    供 calc_dsr / empirical_deflate 与 top_trials（Top-K 提取）共用，
+    保证去重口径一致。
     """
     return tuple(sorted(
         (k, round(v, 9) if not isinstance(v, str) else v)
@@ -172,7 +175,7 @@ def trial_param_key(params: dict) -> tuple:
 
 
 def top_trials(trials, k: int = 5) -> list:
-    """按分数降序、参数去重取前 k 个 trial（与 calc_dsr 同去重口径）。
+    """按分数降序、参数去重取前 k 个 trial（与 empirical_deflate 同去重口径）。
 
     Parameters
     ----------
@@ -517,3 +520,274 @@ def plot_paths_curve(oos_mpts, cumprod=True, labels=None, color=None, lw=0.8,
         from IPython.display import display
         display(fig)
         plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# 经验零分布多检验（复合目标）：GPD 上尾 deflate + Efron 主体法 local fdr
+# ---------------------------------------------------------------------------
+# 背景：calc_dsr 对 H0 的假设（trial 分数 ~ N(0, V)、max-of-N 用高斯极值）
+# 只对 SR 类目标成立；复合目标 asr*0.5 - maxdd + skew 在 H0 下既有结构性
+# 水平偏移（-E[maxdd] 负基线），分布也有界且偏斜，两个前提都不满足。
+# 本段改为"用 trial 分数群自身估计零分布"，只读 study 分数即可：
+#   empirical_deflate  变体1：GPD 上尾（POT；拟合剔除最优的"噪声律"，
+#                      全量拟合作保守对照）→ per-fold 判据量（p_luck/
+#                      margin/max_p95/n_trials；不复用 calc_dsr 的
+#                      dsr/sr_obs 命名——分数非 Sharpe，DSR 名不副实）；
+#   efron_null_fdr     变体2：中位数/MAD 主体法 → per-trial 尾部 p 值、
+#                      local fdr 与 BH/BY q 值（BH/BY 的合法输入源）。
+# 分层约定：per-fold 判决用 empirical_deflate；per-trial 集合筛选才用
+# efron_null_fdr，两者勿在同一层叠加校正。
+
+
+def _unique_trial_scores(sr_or_study):
+    """study | 数组 → 去重 trial 分数（每个参数组合保留最高分）+ 评估总数。
+
+    与 calc_dsr 的 N 口径一致：params 经 trial_param_key 去重（重复采样不
+    增加候选信息）；同一组合的多次评估只留最高分（确定性评估下各次分数
+    相同；留最高分对数值残差也更稳健）。
+    """
+    if hasattr(sr_or_study, "trials"):
+        trials = [t for t in sr_or_study.trials
+                  if t.values is not None and np.isfinite(t.values[0])]
+        best = {}
+        for t in trials:
+            key = trial_param_key(t.params)
+            v = float(t.values[0])
+            if key not in best or v > best[key]:
+                best[key] = v
+        srs = np.array(list(best.values()), dtype=float)
+        n_total = len(trials)
+    else:
+        srs = np.asarray(sr_or_study, dtype=float)
+        srs = srs[np.isfinite(srs)]
+        n_total = len(srs)
+    return srs, n_total
+
+
+def _fit_gpd_tail(srs, u_frac=0.80, min_exceed=10, xi_min=-0.10, xi_max=0.5):
+    """POT/GPD 上尾拟合：超阈量 y = s - u 拟合广义 Pareto（MLE, floc=0）。
+
+    阈值 u 取第 k+1 大分数，k = clip(ceil((1-u_frac)*m), min_exceed,
+    max(3, m//2))——保证超阈点含最大值、阈值落在上半分布且不少于 3 个。
+    MLE 失败或 xi 越界 [xi_min, xi_max] 时回退：xi 截断 + 矩估计 beta =
+    mean(y)*(1-xi)。xi_min 是负向正则化底（默认 -0.10，校准实验选定）：
+    负 xi（有界尾）在小样本下主要由局部曲率驱动，会把人工支撑上界放到
+    观测范围内，使 max 概率虚假塌到 0（反保守）；压到缓负值=改用更重
+    尾巴，方向保守。
+
+    Returns
+    -------
+    (u, n_exceed, xi, beta) | None : 上尾正超阈点不足 3 个（并列/退化）时
+        返回 None，调用方走保守退化分支。
+    """
+    s_desc = np.sort(srs)[::-1]
+    m = len(s_desc)
+    k = int(np.ceil((1.0 - u_frac) * m))
+    k = min(max(k, min_exceed), max(3, m // 2))
+    u = float(s_desc[k])                     # 第 k+1 大 → 严格超越 u 者 ≈ k 个
+    y = s_desc[:k] - u
+    y = y[y > 0]                             # 并列于 u 的点不算超阈
+    if y.size < 3:
+        return None
+    xi = beta = np.nan
+    try:
+        xi_hat, _, beta_hat = genpareto.fit(y, floc=0)
+        if np.isfinite(xi_hat) and np.isfinite(beta_hat) and beta_hat > 0:
+            xi, beta = float(xi_hat), float(beta_hat)
+    except Exception:
+        pass
+    if not (np.isfinite(xi) and np.isfinite(beta)):
+        xi, beta = 0.0, float(y.mean())      # 回退：指数尾
+    if xi < xi_min or xi > xi_max:           # xi 越界：截断 + 矩估计尺度
+        xi = float(np.clip(xi, xi_min, xi_max))
+        beta = float(y.mean() * (1.0 - xi))
+    return u, int(y.size), xi, beta
+
+
+def _gpd_tail_survival(s, u, xi, beta, q_tail):
+    """GPD 上尾的无条件生存概率 P(S > s)（单点超越概率），q_tail = k/m。"""
+    z = 1.0 + xi * (s - u) / beta
+    z = max(z, 1e-12)                        # xi<0 时模型上界外的数值保护
+    if abs(xi) < 1e-9:
+        return float(q_tail * np.exp(-(s - u) / beta))
+    return float(q_tail * z ** (-1.0 / xi))
+
+
+def _degenerate_deflate(srs, n_total, why):
+    """保守退化输出：无法估计经验零分布时 p_luck=1（最优分按纯运气论处）。"""
+    s_obs = float(np.max(srs)) if srs.size else np.nan
+    return {"p_luck": 1.0, "best_score": s_obs, "exp_max": s_obs, "margin": 0.0,
+            "max_p95": s_obs, "n_trials": int(srs.size),
+            "n_trials_total": n_total, "scores": srs, "u": np.nan,
+            "n_exceed": 0, "xi": np.nan, "beta": np.nan, "xi_full": np.nan,
+            "beta_full": np.nan, "p_luck_full": np.nan, "p_luck_mc": 1.0,
+            "method": "gpd_pot", "degenerate": why}
+
+
+def empirical_deflate(score_or_study, n_sim=200_000, seed=42, u_frac=0.80,
+                      min_exceed=10, xi_min=-0.10):
+    """经验零分布 deflate（变体1：GPD 上尾）：复合目标的逐折选择偏差判据。
+
+    与 calc_dsr 同一输入消费结构（study|数组，参数去重口径相同），但
+    零分布来源不同：不再假设 trial 分数 ~ N(0, V)，而是把分数群上尾
+    当作噪声律的经验估计（POT/GPD），max-of-m 分位由该模型给出——
+
+    * 结构性水平偏移（复合分数的 -E[maxdd] 负基线）由分数群位置吸收；
+    * 分布形状（有界、偏斜）由形状参数 xi 刻画，不用高斯极值公式。
+
+    零分布语义：p_luck = P(H0 下 m 次可交换试验的最优分数 ≥ s_obs)，
+    H0 = "分数群其余部分是该随机系统的噪声散布"（多数 trial 无真信号；
+    参数异质性把零分布拉宽 → 保守方向）。随机采样模式成立度最高；TPE
+    自适应会让假设变弱，判读时打折。
+
+    上尾拟合剔除最优本身（trim-top-1）：若把最优含进拟合，它会把上尾
+    尺度撑大（遮蔽效应），真信号也会被打成"侥幸"；剔除后 H0 下 p_luck
+    近似均匀、真信号下 p_luck → 0。假定至多一个真信号，多个时偏保守；
+    另行给出全量拟合（含最优）的保守对照 p_luck_full。
+
+    Parameters
+    ----------
+    score_or_study : optuna Study | array-like（解析与 calc_dsr 同口径）
+    n_sim : int，max 分布 MC 次数（exp_max / max_p95 / p_luck_mc）
+    seed : int | None，随机种子
+    u_frac : float，POT 上尾占比（阈值取上尾 1-u_frac）
+    min_exceed : int，最小超阈点数
+    xi_min : float，GPD 形状下界（负向正则化，默认 -0.10；调低更激进、
+        调高更保守）
+
+    Returns
+    -------
+    dict : p_luck / best_score / exp_max / margin / max_p95 /
+        n_trials / n_trials_total / scores / u / n_exceed / xi / beta /
+        xi_full / beta_full / p_luck_full / p_luck_mc / method / degenerate
+        （不复用 calc_dsr 的 dsr/sr_obs 命名——分数非 Sharpe，DSR 名不副实；
+        best_score = 最优 trial 分数；分数全等/上尾并列不可拟合或有效
+        trial 过少（<7）时返回 p_luck=1、degenerate 非空的保守退化输出）
+
+    Notes
+    -----
+    * p_luck 解析式：1 - [1 - q_tail*(1+xi*(s_obs-u)/beta)^(-1/xi)]^m，
+      小尾时 ≈ m × 单点超越概率；
+    * xi_min=-0.10 负向正则化：负 xi 的人工支撑上界若落在观测范围内，
+      会把 p_luck 虚假压到 0（反保守）；缓负值=更重尾巴，方向保守；
+    * xi_full / beta_full / p_luck_full：全量拟合（含最优）的保守对照；
+      两 p 差异大说明最优对拟合影响大（可能为真信号），决策以主 p 为准；
+    * 若需要 per-trial 量（尾部 p / local fdr / BH-BY），用
+      efron_null_fdr，且勿与本函数的 per-fold 判据叠加校正。
+    """
+    srs, n_total = _unique_trial_scores(score_or_study)
+    m = len(srs)
+    if m < 7:
+        return _degenerate_deflate(srs, n_total, "有效 trial 过少（<7），无法估计上尾零分布")
+    s_obs = float(srs.max())
+
+    # 主拟合：剔除最优后的噪声律（trim-top-1，避免最优自身撑大上尾）
+    rest = np.sort(srs)[:-1]
+    fit = _fit_gpd_tail(rest, u_frac=u_frac, min_exceed=min_exceed,
+                        xi_min=xi_min)
+    if fit is None:
+        return _degenerate_deflate(srs, n_total, "分数无散布或上尾并列不可拟合")
+    u, n_exceed, xi, beta = fit
+    q_tail = n_exceed / rest.size
+
+    # 解析 p_luck：噪声律下 max-of-m 达到 s_obs 的概率
+    sbar = _gpd_tail_survival(s_obs, u, xi, beta, q_tail)
+    p_luck = 1.0 - (1.0 - float(np.clip(sbar, 0.0, 1.0))) ** m
+
+    # max-of-m 的 MC 分布：M = F^-1(U^(1/m))，F = 经验主体 + GPD 上尾 混合
+    rng = np.random.default_rng(seed)
+    v_max = rng.random(n_sim) ** (1.0 / m)
+    mc_max = np.empty(n_sim)
+    lo = v_max < (1.0 - q_tail)              # 主体段：ECDF 分位反演
+    body = rest[rest <= u]
+    mc_max[lo] = np.quantile(body, v_max[lo] / (1.0 - q_tail))
+    t = (1.0 - v_max[~lo]) / q_tail          # 尾部段：生存函数反演
+    if abs(xi) < 1e-9:
+        mc_max[~lo] = u - beta * np.log(t)
+    else:
+        mc_max[~lo] = u + beta / xi * (t ** (-xi) - 1.0)
+    exp_max = float(mc_max.mean())
+    max_p95 = float(np.percentile(mc_max, 95))
+    p_luck_mc = float(np.mean(mc_max >= s_obs))
+
+    # 保守对照：全量拟合（含最优）下的 p_luck（家族规模 m 不变）
+    xi_full = beta_full = p_luck_full = np.nan
+    fit_full = _fit_gpd_tail(srs, u_frac=u_frac, min_exceed=min_exceed,
+                             xi_min=xi_min)
+    if fit_full is not None:
+        u_f, k_f, xi_f, beta_f = fit_full
+        sbar_f = _gpd_tail_survival(s_obs, u_f, xi_f, beta_f, k_f / m)
+        xi_full, beta_full = xi_f, beta_f
+        p_luck_full = 1.0 - (1.0 - float(np.clip(sbar_f, 0.0, 1.0))) ** m
+
+    return {"p_luck": p_luck, "best_score": s_obs, "exp_max": exp_max,
+            "margin": s_obs - exp_max, "max_p95": max_p95, "n_trials": m,
+            "n_trials_total": n_total, "scores": srs, "u": u,
+            "n_exceed": n_exceed, "xi": xi, "beta": beta, "xi_full": xi_full,
+            "beta_full": beta_full, "p_luck_full": p_luck_full,
+            "p_luck_mc": p_luck_mc, "method": "gpd_pot", "degenerate": None}
+
+
+def efron_null_fdr(score_or_study, z_cut=1.0, min_n_lfdr=20):
+    """Efron 经验零分布（主体法）：per-trial 尾部 p 值 / local fdr / BH-BY。
+
+    假设"多数 trial 为噪声"，用分布主体的稳健位置/尺度构造经验零分布：
+
+    * center/scale = 中位数 / (1.4826 × MAD)（对少量右尾信号稳健）；
+    * z = (s - center)/scale；上侧尾部 p = sf(z)（复合分数越大越好，单尾）；
+    * pi0：|z| ≤ z_cut 的观测占比 ÷ 正态期望占比，截断到 [0, 1]；
+    * local fdr = pi0·φ(z)/f_hat(z)，f_hat 为 z 的 KDE（m ≥ min_n_lfdr 时
+      计算；m≈100 下为指示性量，不用于精确阈值判读）；
+    * q_bh / q_by：对 p 值做 BH / BY 校正（statsmodels.multipletests）——
+      分数本身不是 p 值，BH/BY 必须经本函数的 p 值列接入。
+
+    与 empirical_deflate 分层使用：本函数出 per-trial 量（集合筛选），
+    每折的判决量用 empirical_deflate（max 版），勿在同层叠加。
+
+    Parameters
+    ----------
+    score_or_study : optuna Study | array-like（解析与 calc_dsr 同口径）
+    z_cut : float，pi0 估计的中心区半宽（z 单位）
+    min_n_lfdr : int，计算 local fdr 的最小 trial 数
+
+    Returns
+    -------
+    dict : center / scale / pi0 / n_trials / n_trials_total / table
+        table : pandas.DataFrame（按分数降序）score / z / p_value /
+        local_fdr / q_bh / q_by
+    """
+    srs, n_total = _unique_trial_scores(score_or_study)
+    m = len(srs)
+    if m < 6:
+        raise ValueError("efron_null_fdr: 有效 trial 过少（<6）")
+    center = float(np.median(srs))
+    scale = float(1.4826 * np.median(np.abs(srs - center)))
+    if scale <= 0:                           # MAD 退化（大量并列）→ 退回 std
+        scale = float(np.std(srs, ddof=1))
+    if scale <= 0:                           # 全等分数：无散布 → 全部视为噪声
+        z = np.zeros(m)
+        p = np.ones(m)
+        lfdr = np.ones(m)
+        pi0 = 1.0
+    else:
+        z = (srs - center) / scale
+        p = norm.sf(z)                       # 单尾上侧：复合分数越大越好
+        exp_central = 2.0 * norm.cdf(z_cut) - 1.0
+        pi0 = float(np.clip(np.mean(np.abs(z) <= z_cut) / exp_central, 0.0, 1.0))
+        lfdr = np.full(m, np.nan)
+        if m >= min_n_lfdr and np.std(z) > 0:
+            try:
+                dens = gaussian_kde(z)(z)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    lfdr = np.minimum(1.0, pi0 * norm.pdf(z) / dens)
+                lfdr[~np.isfinite(lfdr)] = np.nan
+            except Exception:
+                lfdr = np.full(m, np.nan)
+    from statsmodels.stats.multitest import multipletests
+    _, q_bh, _, _ = multipletests(p, method="fdr_bh")
+    _, q_by, _, _ = multipletests(p, method="fdr_by")
+    table = (pd.DataFrame({"score": srs, "z": z, "p_value": p,
+                           "local_fdr": lfdr, "q_bh": q_bh, "q_by": q_by})
+             .sort_values("score", ascending=False).reset_index(drop=True))
+    return {"center": center, "scale": scale, "pi0": pi0, "n_trials": m,
+            "n_trials_total": n_total, "table": table}
