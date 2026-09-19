@@ -373,6 +373,7 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
         train_ptf, test_ptf = run_params_on_fold(
             X, i, best, test_size=test_size, train_size=train_size,
             purged_size=outer_purged_size, reduce_test=outer_reduce_test)
+        train_ptf.name = f"Fold{i}"
         test_ptf.name = f"Fold{i}"   # predict 不接受 portfolio_params(0.20.x), 预测后设置名称
         # 3) 该折 IS deflate: study trial 分数(经验零分布 GPD 上尾) → 判据量,
         #    与下面 test ASR(OOS) 对照判定过拟合
