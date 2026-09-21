@@ -39,6 +39,7 @@ C(S, S/2)（估计稳健），但假设时间块可交换（忽略时序结构�
     from cscv_pbo import cscv_pbo
     out = cscv_pbo(X, S=16, n_trials=2000, sampler="tpe")  # 空间缺省载自 TOML
     out["pbo"], out["lambdas"]                              # 主判据与 lambda 分布
+    print(out["report"])                                    # 结构化诊断报告（不自动打印）
     plot_cscv(out)                                          # lambda 分布图
 """
 from __future__ import annotations
@@ -267,7 +268,8 @@ def cscv_pbo(X, space=None, *, train_size=1008, test_size=252, n_test_folds=2,
     -------
     dict
         {pbo, lambdas, omega, n_star, sel_sharpe_is, sel_sharpe_oos,
-         n_combos, S, block_len, T_used, N, candidates, study, matrix, meta}
+         n_combos, S, block_len, T_used, N, candidates, study, matrix,
+         meta, report}（report 为结构化诊断报告文本，不自动打印）
     """
     if block_size is None:
         block_size = test_size
@@ -297,37 +299,46 @@ def cscv_pbo(X, space=None, *, train_size=1008, test_size=252, n_test_folds=2,
                        "candidate_mode": candidate_mode,
                        "eval_start": str(M.index[0]),
                        "eval_end": str(M.index[-1])}}
-    if verbose:
-        _report(result)
+    result["report"] = build_report(result)
     if plot:
         plot_cscv(result)
     return result
 
 
-def _report(res):
-    """打印 CSCV PBO 诊断报告。"""
+def build_report(res) -> str:
+    """构建 CSCV PBO 诊断报告（结构化多行文本，不打印）。
+
+    Returns
+    -------
+    str
+        报告文本：搜索配置 / 收益流规模 / 评估区 / PBO / lambda 分位 /
+        冠军多样性 / 解读。
+    """
     meta = res["meta"]
     lam = np.asarray(res["lambdas"])
     pct = np.percentile(lam, [5, 50, 95])
-    print("\n" + "=" * 64)
-    print("       CSCV PBO 诊断（标准版：单次搜索 + 静态参数族）")
-    print("=" * 64)
-    print(f"  搜索：trials={meta['n_trials']} | sampler={meta['sampler']} | "
-          f"候选 {meta['candidate_mode']} = {res['N']} | 搜索段 {meta['train_size']} 天")
-    print(f"  收益流：{res['N']} 参数 x {meta['n_blocks']} 块 x "
-          f"{meta['block_size']} 天 = {meta['n_blocks'] * meta['block_size']} 天")
-    print(f"  评估区：{meta['eval_start']} ~ {meta['eval_end']}")
-    print(f"  CSCV：S={res['S']} 块（每块 {res['block_len']} 天）| "
-          f"组合数 C({res['S']},{res['S'] // 2}) = {res['n_combos']}")
-    print(f"  PBO = freq(lambda<=0) = {res['pbo']:.1%}"
-          f"（{int(round(res['pbo'] * res['n_combos']))}/{res['n_combos']}）")
-    print(f"  lambda 分位：5%={pct[0]:+.2f} | 50%={pct[1]:+.2f} | "
-          f"95%={pct[2]:+.2f}")
-    print(f"  IS 冠军多样性：{len(np.unique(res['n_star']))}/{res['N']} "
-          f"个不同候选被选为冠军")
-    print("  解读：PBO 越接近 0 排名传递性越好；>50% 严重预警"
-          "（IS 最优比随机挑还不可信）")
-    print("=" * 64 + "\n")
+    lines = [
+        "=" * 64,
+        "       CSCV PBO 诊断（标准版：单次搜索 + 静态参数族）",
+        "=" * 64,
+        f"  搜索：trials={meta['n_trials']} | sampler={meta['sampler']} | "
+        f"候选 {meta['candidate_mode']} = {res['N']} | 搜索段 {meta['train_size']} 天",
+        f"  收益流：{res['N']} 参数 x {meta['n_blocks']} 块 x "
+        f"{meta['block_size']} 天 = {meta['n_blocks'] * meta['block_size']} 天",
+        f"  评估区：{meta['eval_start']} ~ {meta['eval_end']}",
+        f"  CSCV：S={res['S']} 块（每块 {res['block_len']} 天）| "
+        f"组合数 C({res['S']},{res['S'] // 2}) = {res['n_combos']}",
+        f"  PBO = freq(lambda<=0) = {res['pbo']:.1%}"
+        f"（{int(round(res['pbo'] * res['n_combos']))}/{res['n_combos']}）",
+        f"  lambda 分位：5%={pct[0]:+.2f} | 50%={pct[1]:+.2f} | "
+        f"95%={pct[2]:+.2f}",
+        f"  IS 冠军多样性：{len(np.unique(res['n_star']))}/{res['N']} "
+        f"个不同候选被选为冠军",
+        "  解读：PBO 越接近 0 排名传递性越好；>50% 严重预警"
+        "（IS 最优比随机挑还不可信）",
+        "=" * 64,
+    ]
+    return "\n".join(lines)
 
 
 def plot_cscv(result, bins=60, figsize=(10, 4), save_path=None):
