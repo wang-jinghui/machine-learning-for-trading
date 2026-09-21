@@ -13,6 +13,7 @@
     d = empirical_deflate(fold["study"])        # 复合目标每折 deflate（键: p_luck/margin/...）
     t = efron_null_fdr(fold["study"])["table"]  # per-trial p / local fdr / q_bh / q_by
     # calc_dsr(fold["study"])                   # 旧口径仍保留, 仅适用 SR 类目标, 复合目标勿用
+    r = rank_pbo_logit(X, folds)                # 全参数 train/test 重放 → CPCV-best 排名分位/λ/PBO
 """
 
 from __future__ import annotations
@@ -791,3 +792,295 @@ def efron_null_fdr(score_or_study, z_cut=1.0, min_n_lfdr=20):
              .sort_values("score", ascending=False).reset_index(drop=True))
     return {"center": center, "scale": scale, "pi0": pi0, "n_trials": m,
             "n_trials_total": n_total, "table": table}
+
+
+# ---------------------------------------------------------------------------
+# 选择排名 PBO 诊断：全参数 train/test 重放 + 分位 logit（逐折 CSCV 变体）
+# ---------------------------------------------------------------------------
+# 与 empirical_deflate（分数绝对值 + 零分布 max-of-N 校正）互补：本段看
+# "分布内相对位置"——被选参数在参数池中的排名分位与 logit（跨折频率）。
+def _unique_trials(study):
+    """study 有效 trial 按参数去重（trial_param_key 口径）→ [(key, params), ...]。
+
+    与 _unique_trial_scores 同去重口径（重复采样不增加候选信息），区别是
+    保留参数本体供重放：同一参数组合只留先出现 trial 的 params（重复命中
+    的参数值相同，浮点采样残差经 key 的 round(9) 归一）。
+    """
+    trials = [t for t in study.trials
+              if t.values is not None and np.isfinite(t.values[0])]
+    seen, out = set(), []
+    for t in trials:
+        key = trial_param_key(t.params)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((key, dict(t.params)))
+    return out
+
+
+def rank_pbo_logit(X, folds, wf_kwargs=None, purged_size=1, reduce_test=True,
+                   score="composite", include_train_argmax=True,
+                   keep_params=True, verbose=True):
+    """选择排名 PBO 诊断：全参数 train/test 重放 → 分位 logit λ（逐折 CSCV 变体）。
+
+    消费 nested_adaptive_search 的 fold_results（或同构 fold 结果）：把每折
+    study 中全部去重 trial 参数经 run_params_on_fold（fit 最近 train_size 天
+    → predict 全 train 段 + 纯净 test 段；与扰动/敏感性/Top-K 同一公共应用
+    入口，部署语义）重放，得到每折两条分数向量（train 侧 / test 侧），计算
+    CPCV-best（路径均值最优，即生产参数）在参数池中的相对排名分位与 logit：
+
+        w = rank / (N + 1)              rank 升序（最低分 1，CSCV 原文口径）
+        lambda = ln( w / (1 - w) )      lambda>0 ⇔ 好于中位；<0 ⇔ 差于中位
+        PBO = freq( lambda_test < 0 )   跨折频率：OOS 排名低于中位的折占比
+
+    研究对象1（主）= CPCV-best：train 侧排名（w_train）与 test 侧排名
+    （w_test）分别计算——"两次计算"共享同一次 fit（run_params_on_fold 一次
+    返回 train/test 两段）。
+    研究对象2（对照，include_train_argmax=True）= 纯 train 分数 argmax，
+    即标准 CSCV 定义"IS 最优策略"的直接落地（同一批分数表，零额外成本）。
+
+    机制备注（解读定位）：内层 CPCV 窗口 = 外层 train 段末段（ts+test_size
+    天均在外层训练段内），选参已间接使用 train 的全部信息 → w_train 预期
+    偏高，该量用于量化 CPCV 路径均值最优与单段 IS 实现的乖离（best 与
+    train-argmax 是否同参、分位落差多大），不是独立的样本内检验；独立
+    的样本外信息在 w_test（外层 test 段从未进入任何搜索）。
+
+    纪律：只评估、不选参。若诊断显示 best 并非 test 排名最优，不得据此
+    换参——用 OOS 排名回改策略会作废该段 OOS。
+
+    折位对齐：wf_kwargs 缺省时从 folds 推导众数窗口（derive_outer_window），
+    purged_size / reduce_test 显式透传（默认 1 / True 与搜索侧一致，务必与
+    搜索配置核对）。校验：best 重放 ASR 必须复现 folds 的 "train ASR"/
+    "test ASR"（max|Δ|>1e-6 视为口径错位直接报错，防静默错位）。
+
+    Parameters
+    ----------
+    X : pd.DataFrame，与 nested_adaptive_search 同口径收益数据
+    folds : list，nested_adaptive_search 返回结果（每折含 study / train ASR /
+        test ASR / params）
+    wf_kwargs : dict | None，run_params_on_fold 折位参数 {test_size,
+        train_size, purged_size, reduce_test}；None = 从 folds 推导
+    purged_size : int，外层 WF purge（仅 wf_kwargs 缺省推导时使用，默认 1）
+    reduce_test : bool，外层 WF 尾段策略（默认 True 与搜索侧一致，含缩短尾折）
+    score : "composite" | "asr"，主口径排名分数。composite = asr*0.5 - maxdd
+        + skew（与 inner_cpcv_score 同构的单段版，选参效用函数一致）；两种
+        口径的排名均在 scores 表输出，主口径决定 best 的 λ / PBO 报告
+    include_train_argmax : bool，是否输出 train-argmax 对照（标准 CSCV 定义）
+    keep_params : bool，scores 表是否展平参数列（审计；fitness 展平为 fitness）
+    verbose : bool，打印逐折进度与总结报告
+
+    Returns
+    -------
+    dict :
+        scores : DataFrame，行 MultiIndex (fold, param_id)；列 = 双口径分数
+            （composite/asr/mdd/skew × train/test）| w_train / w_test（主口径
+            分位）| w_train_asr / w_test_asr（ASR 口径分位）| is_cpcv_best /
+            is_train_argmax（+ keep_params 时参数列）
+        best : DataFrame，行 = fold：n_params | rank/w/lambda（train/test 主
+            口径）| same_as_train_argmax | train_gap_to_argmax（CPCV-best 的
+            train 分距池内冠军的分数差）
+        train_argmax : DataFrame | None，对照对象行 = fold：rank/w/lambda_test
+            | same_as_cpcv_best（include_train_argmax=False 时为 None）
+        summary : dict，汇总判据：折数 / 参数池规模 / best 的 w_train 与
+            w_test 分位（median/p5/p95）/ lambda>0 折占比 / pbo_train 与
+            pbo_test（freq(λ<0)）/ train-argmax 对照的 pbo_test 与同参折
+            占比 / asr_max_diff（重放校验量）
+
+    用法::
+
+        from cpcv_analysis import rank_pbo_logit
+        out = rank_pbo_logit(X, folds)              # 折位参数缺省从 folds 推导
+        out["summary"]["best"]["pbo_test"]          # 主判据：OOS 排名 logit<0 频率
+        out["best"]                                 # 一行一折（train/test 两次计算）
+        out["scores"]                               # 全参数长表（可深挖 rank 传递性）
+    """
+    from scipy.stats import rankdata
+    from wf_cpcv_search import derive_outer_window, run_params_on_fold
+
+    if not folds:
+        raise ValueError("rank_pbo_logit: folds 为空")
+    if score not in ("composite", "asr"):
+        raise ValueError(
+            f"rank_pbo_logit: score 需为 'composite' | 'asr'，收到 {score!r}")
+
+    # 折位对齐：缺省从 folds 推导（与 derive_wf_kwargs 同映射，不引入 robustness 依赖）
+    if wf_kwargs is None:
+        w = derive_outer_window(folds, purged_size=purged_size,
+                                reduce_test=reduce_test)
+        wf_kwargs = {"test_size": w["test_size"], "train_size": w["train_size"],
+                     "purged_size": w["outer_purged_size"],
+                     "reduce_test": w["outer_reduce_test"]}
+
+    def _side_scores(ptf, side):
+        """单段 Portfolio → 该侧分数四项（复合分 = inner_cpcv_score 公式的
+        单段版：asr*0.5 - maxdd + skew；双口径共用一次取属性）。"""
+        asr = float(ptf.annualized_sharpe_ratio)
+        mdd = float(ptf.max_drawdown)
+        skw = float(ptf.skew)
+        return {f"asr_{side}": asr, f"mdd_{side}": mdd, f"skew_{side}": skw,
+                f"composite_{side}": asr * 0.5 - mdd + skw}
+
+    def _logit(w_):
+        """w ∈ (0,1) 严格（rank/(N+1)）→ logit 无需 eps 截断。"""
+        return float(np.log(w_ / (1.0 - w_)))
+
+    rows, best_rows, am_rows = [], [], []
+    pool_sizes, asr_dmax = [], 0.0
+    for f in folds:
+        fold_idx = f["fold"]
+        pool = _unique_trials(f["study"])
+        n = len(pool)
+        if n < 2:
+            raise ValueError(f"rank_pbo_logit: Fold {fold_idx} 有效参数池过小"
+                             f"（N={n}<2），无法排名")
+        keys = [k for k, _ in pool]
+        best_key = trial_param_key(f["params"])
+        if best_key not in keys:
+            raise ValueError(f"rank_pbo_logit: Fold {fold_idx} 的 best 参数不在"
+                             f" study 去重池中（口径异常）")
+        pool_sizes.append(n)
+
+        # ① 全参数重放：每参数一次 fit → train/test 两段（run_params_on_fold）
+        recs = []
+        for key, p in pool:
+            tr_ptf, te_ptf = run_params_on_fold(X, fold_idx, p, **wf_kwargs)
+            recs.append((key, p, {**_side_scores(tr_ptf, "train"),
+                                  **_side_scores(te_ptf, "test")}))
+
+        # ② 每侧排名分位 w = rank/(N+1)（主口径 + ASR 附口径；rankdata 处理并列）
+        def _w_vec(side, kind):
+            v = np.array([r[2][f"{kind}_{side}"] for r in recs], dtype=float)
+            r = rankdata(v, method="average")
+            return v, r, r / (n + 1.0)
+
+        s_tr, rank_tr, w_tr = _w_vec("train", score)
+        s_te, rank_te, w_te = _w_vec("test", score)
+        _, _, w_tr_asr = _w_vec("train", "asr")
+        _, _, w_te_asr = _w_vec("test", "asr")
+
+        idx_best = keys.index(best_key)
+        idx_am = int(np.argmax(s_tr)) if include_train_argmax else None
+
+        # ③ best 行：train 侧 + test 侧两次计算（同一批 fit 的两侧输出）
+        #    校验：重放 ASR 必须复现 folds 记录（同入口同口径）
+        asr_dmax = max(asr_dmax,
+                       abs(recs[idx_best][2]["asr_train"] - float(f["train ASR"])),
+                       abs(recs[idx_best][2]["asr_test"] - float(f["test ASR"])))
+        best_rows.append({
+            "fold": fold_idx, "n_params": n,
+            "rank_train": float(rank_tr[idx_best]),
+            "w_train": float(w_tr[idx_best]),
+            "lambda_train": _logit(w_tr[idx_best]),
+            "rank_test": float(rank_te[idx_best]),
+            "w_test": float(w_te[idx_best]),
+            "lambda_test": _logit(w_te[idx_best]),
+            "same_as_train_argmax": (bool(idx_am == idx_best)
+                                     if include_train_argmax else None),
+            "train_gap_to_argmax": (float(s_tr[idx_am] - s_tr[idx_best])
+                                    if include_train_argmax else np.nan),
+        })
+
+        # ④ train-argmax 对照行：train 侧恒为池内冠军（rank=N），有信息的是 test 侧
+        if include_train_argmax:
+            am_rows.append({"fold": fold_idx, "n_params": n,
+                            "rank_test": float(rank_te[idx_am]),
+                            "w_test": float(w_te[idx_am]),
+                            "lambda_test": _logit(w_te[idx_am]),
+                            "same_as_cpcv_best": bool(idx_am == idx_best)})
+
+        # ⑤ 全参数明细行（审计 + 供自行深挖 rank 传递性）
+        for i, (key, p, s) in enumerate(recs):
+            row = {"fold": fold_idx, "param_id": i, **s,
+                   "w_train": float(w_tr[i]), "w_test": float(w_te[i]),
+                   "w_train_asr": float(w_tr_asr[i]),
+                   "w_test_asr": float(w_te_asr[i]),
+                   "is_cpcv_best": bool(i == idx_best),
+                   "is_train_argmax": (bool(i == idx_am)
+                                       if include_train_argmax else None)}
+            if keep_params:
+                pp = dict(p)
+                pp["fitness"] = str(pp.pop("nondomin__fitness_measures"))
+                row.update(pp)
+            rows.append(row)
+
+        if verbose:
+            print(f"Fold {fold_idx}: N={n} | w_train={w_tr[idx_best]:.2f} "
+                  f"| w_test={w_te[idx_best]:.2f} "
+                  f"| lambda_test={_logit(w_te[idx_best]):+.2f}")
+
+    if asr_dmax > 1e-6:
+        raise ValueError(
+            f"rank_pbo_logit: best 重放 ASR 与 folds 记录不一致"
+            f"（max|Δ|={asr_dmax:.3g}），请核对 X / wf_kwargs 与 "
+            f"nested_adaptive_search 是否同口径")
+
+    scores = pd.DataFrame(rows).set_index(["fold", "param_id"])
+    best = pd.DataFrame(best_rows).set_index("fold")
+    train_argmax = (pd.DataFrame(am_rows).set_index("fold")
+                    if include_train_argmax else None)
+
+    # ⑥ 汇总：best 的两次计算 + 主判据 PBO（跨折频率）
+    lam_te = best["lambda_test"].to_numpy()
+    lam_tr = best["lambda_train"].to_numpy()
+    w_tr_b = best["w_train"].to_numpy()
+    w_te_b = best["w_test"].to_numpy()
+
+    def _q(v):
+        return {"median": float(np.median(v)), "p5": float(np.percentile(v, 5)),
+                "p95": float(np.percentile(v, 95))}
+
+    summary = {
+        "n_folds": len(best),
+        "n_params": {"min": int(min(pool_sizes)), "max": int(max(pool_sizes)),
+                     "total": int(sum(pool_sizes))},
+        "best": {
+            "w_train": _q(w_tr_b),
+            "w_train_gt_half_frac": float((w_tr_b > 0.5).mean()),
+            "lambda_train_gt0_frac": float((lam_tr > 0).mean()),
+            "w_test": _q(w_te_b),
+            "lambda_test": _q(lam_te),
+            "pbo_train": float((lam_tr < 0).mean()),
+            "pbo_test": float((lam_te < 0).mean()),
+        },
+        "train_argmax": None,
+        "asr_max_diff": asr_dmax,
+    }
+    if include_train_argmax:
+        lam_te_am = train_argmax["lambda_test"].to_numpy()
+        summary["train_argmax"] = {
+            "same_frac": float(best["same_as_train_argmax"].mean()),
+            "lambda_test": _q(lam_te_am),
+            "pbo_test": float((lam_te_am < 0).mean()),
+        }
+
+    if verbose:
+        B = summary["best"]
+        print("\n" + "=" * 60)
+        print("        CPCV 选择排名 PBO 诊断（全参数 train/test 重放）")
+        print("=" * 60)
+        print(f"  折数={summary['n_folds']} | 每折参数池 "
+              f"{summary['n_params']['min']}~{summary['n_params']['max']}"
+              f"（unique 去重）")
+        print("  [研究对象1] CPCV-best（路径均值最优；与 train 高度重合，"
+              "w_train 预期偏高）")
+        print(f"    w_train  : 中位 {B['w_train']['median']:.2f} | 5%~95% "
+              f"[{B['w_train']['p5']:.2f}, {B['w_train']['p95']:.2f}] | "
+              f">0.5 折占比 {B['w_train_gt_half_frac']:.0%}")
+        print(f"    lambda_train > 0 折占比 {B['lambda_train_gt0_frac']:.0%}")
+        print(f"    w_test   : 中位 {B['w_test']['median']:.2f} | 5%~95% "
+              f"[{B['w_test']['p5']:.2f}, {B['w_test']['p95']:.2f}]")
+        print(f"    PBO_test = freq(lambda_test < 0) = {B['pbo_test']:.1%} "
+              f"（{int((lam_te < 0).sum())}/{summary['n_folds']}）")
+        if include_train_argmax:
+            A = summary["train_argmax"]
+            print("  [研究对象2] train-argmax 对照（标准 CSCV 定义：IS 最优）")
+            print(f"    与 CPCV-best 同参折占比 {A['same_frac']:.0%} | "
+                  f"lambda_test 中位 {A['lambda_test']['median']:+.2f}")
+            print(f"    PBO_test(标准) = {A['pbo_test']:.1%} "
+                  f"（{int((lam_te_am < 0).sum())}/{summary['n_folds']}）")
+        print("-" * 60)
+        print(f"  重放校验 max|ΔASR| = {asr_dmax:.2e}（应≈0；不一致会直接报错）")
+        print("=" * 60)
+
+    return {"scores": scores, "best": best, "train_argmax": train_argmax,
+            "summary": summary}
