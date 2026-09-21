@@ -1,0 +1,167 @@
+========================================================================
+[2026-09-21 22:36:03] 
+========================================================================
+资产池: 2141 只 | 2604 天 | 2016-01-04 ~ 2026-09-18
+
+========================================================================
+[2026-09-21 22:36:08] Search Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 55, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.5, 'step': 0.1}, 'extremes__k': {'low': 0.1, 'high': 0.6, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-kurt', 'mean-variance-maxdd-kurt', 'mean-variance-avgdd-kurt', 'mean-semideviation-avgdd', 'mean-mad-maxdd-kurt', 'mean-mad-avgdd-kurt', 'mean-mad-maxdd-cvar-kurt', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar-kurt', 'mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 252, 'high': 756, 'step': 252}}
+
+========================================================================
+[2026-09-21 22:36:29] Parameter Space
+========================================================================
+{'test_size': 252, 'train_size': 1008, 'n_test_folds': 2, 'n_jobs': 4, 'cv_n_jobs': 10, 'n_trials': 2000, 'patience': 200, 'sampler': 'tpe', 'min_delta': 0.0001, 'seed': 42, 'inner_purged_size': 2, 'inner_embargo_size': 2, 'candidate_mode': 'all', 'top_k': 50, 'S': 16, 'verbose': True}
+
+========================================================================
+[2026-09-21 23:05:55] CSCV PBO 诊断
+========================================================================
+================================================================
+       CSCV PBO 诊断（标准版：单次搜索 + 静态参数族）
+================================================================
+  搜索：trials=2000 | sampler=tpe | 候选 all = 111 | 搜索段 1008 天
+  收益流：111 参数 x 6 块 x 252 天 = 1512 天
+  评估区：2020-02-27 00:00:00+08:00 ~ 2026-05-25 00:00:00+08:00
+  CSCV：S=16 块（每块 94 天）| 组合数 C(16,8) = 12870
+  PBO = freq(lambda<=0) = 48.5%（6240/12870）
+  lambda 分位：5%=-2.56 | 50%=+0.07 | 95%=+2.32
+  IS 冠军多样性：36/111 个不同候选被选为冠军
+  解读：PBO 越接近 0 排名传递性越好；>50% 严重预警（IS 最优比随机挑还不可信）
+================================================================
+
+========================================================================
+[2026-09-21 23:22:59] Search Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 55, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.5, 'step': 0.1}, 'extremes__k': {'low': 0.9, 'high': 0.9, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-kurt', 'mean-variance-maxdd-kurt', 'mean-variance-avgdd-kurt', 'mean-semideviation-avgdd', 'mean-mad-maxdd-kurt', 'mean-mad-avgdd-kurt', 'mean-mad-maxdd-cvar-kurt', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar-kurt', 'mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 252, 'high': 756, 'step': 252}}
+
+========================================================================
+[2026-09-21 23:23:05] Parameter Space
+========================================================================
+{'test_size': 252, 'train_size': 1008, 'n_test_folds': 2, 'n_jobs': 4, 'cv_n_jobs': 10, 'n_trials': 2000, 'patience': 200, 'sampler': 'tpe', 'min_delta': 0.0001, 'seed': 42, 'inner_purged_size': 2, 'inner_embargo_size': 2, 'candidate_mode': 'all', 'top_k': 50, 'S': 16, 'verbose': True}
+
+========================================================================
+[2026-09-21 23:48:18] CSCV PBO 诊断
+========================================================================
+================================================================
+       CSCV PBO 诊断（标准版：单次搜索 + 静态参数族）
+================================================================
+  搜索：trials=2000 | sampler=tpe | 候选 all = 85 | 搜索段 1008 天
+  收益流：85 参数 x 6 块 x 252 天 = 1512 天
+  评估区：2020-02-27 00:00:00+08:00 ~ 2026-05-25 00:00:00+08:00
+  CSCV：S=16 块（每块 94 天）| 组合数 C(16,8) = 12870
+  PBO = freq(lambda<=0) = 18.9%（2437/12870）
+  lambda 分位：5%=-1.92 | 50%=+1.73 | 95%=+4.44
+  IS 冠军多样性：32/85 个不同候选被选为冠军
+  解读：PBO 越接近 0 排名传递性越好；>50% 严重预警（IS 最优比随机挑还不可信）
+================================================================
+
+========================================================================
+[2026-09-21 23:51:40] Search Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 55, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.9, 'high': 0.9, 'step': 0.1}, 'extremes__k': {'low': 0.1, 'high': 0.6, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-kurt', 'mean-variance-maxdd-kurt', 'mean-variance-avgdd-kurt', 'mean-semideviation-avgdd', 'mean-mad-maxdd-kurt', 'mean-mad-avgdd-kurt', 'mean-mad-maxdd-cvar-kurt', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar-kurt', 'mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 252, 'high': 756, 'step': 252}}
+
+========================================================================
+[2026-09-21 23:51:48] Parameter Space
+========================================================================
+{'test_size': 252, 'train_size': 1008, 'n_test_folds': 2, 'n_jobs': 4, 'cv_n_jobs': 10, 'n_trials': 2000, 'patience': 200, 'sampler': 'tpe', 'min_delta': 0.0001, 'seed': 42, 'inner_purged_size': 2, 'inner_embargo_size': 2, 'candidate_mode': 'all', 'top_k': 50, 'S': 16, 'verbose': True}
+
+========================================================================
+[2026-09-22 00:01:07] CSCV PBO 诊断
+========================================================================
+================================================================
+       CSCV PBO 诊断（标准版：单次搜索 + 静态参数族）
+================================================================
+  搜索：trials=2000 | sampler=tpe | 候选 all = 92 | 搜索段 1008 天
+  收益流：92 参数 x 6 块 x 252 天 = 1512 天
+  评估区：2020-02-27 00:00:00+08:00 ~ 2026-05-25 00:00:00+08:00
+  CSCV：S=16 块（每块 94 天）| 组合数 C(16,8) = 12870
+  PBO = freq(lambda<=0) = 19.0%（2445/12870）
+  lambda 分位：5%=-1.73 | 50%=+1.57 | 95%=+4.52
+  IS 冠军多样性：29/92 个不同候选被选为冠军
+  解读：PBO 越接近 0 排名传递性越好；>50% 严重预警（IS 最优比随机挑还不可信）
+================================================================
+
+========================================================================
+[2026-09-22 00:03:14] Search Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 55, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.9, 'high': 0.9, 'step': 0.1}, 'extremes__k': {'low': 0.9, 'high': 0.9, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-kurt', 'mean-variance-maxdd-kurt', 'mean-variance-avgdd-kurt', 'mean-semideviation-avgdd', 'mean-mad-maxdd-kurt', 'mean-mad-avgdd-kurt', 'mean-mad-maxdd-cvar-kurt', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar-kurt', 'mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 252, 'high': 756, 'step': 252}}
+
+========================================================================
+[2026-09-22 00:03:17] Parameter Space
+========================================================================
+{'test_size': 252, 'train_size': 1008, 'n_test_folds': 2, 'n_jobs': 4, 'cv_n_jobs': 10, 'n_trials': 2000, 'patience': 200, 'sampler': 'tpe', 'min_delta': 0.0001, 'seed': 42, 'inner_purged_size': 2, 'inner_embargo_size': 2, 'candidate_mode': 'all', 'top_k': 50, 'S': 16, 'verbose': True}
+
+========================================================================
+[2026-09-22 00:33:32] CSCV PBO 诊断
+========================================================================
+================================================================
+       CSCV PBO 诊断（标准版：单次搜索 + 静态参数族）
+================================================================
+  搜索：trials=2000 | sampler=tpe | 候选 all = 99 | 搜索段 1008 天
+  收益流：99 参数 x 6 块 x 252 天 = 1512 天
+  评估区：2020-02-27 00:00:00+08:00 ~ 2026-05-25 00:00:00+08:00
+  CSCV：S=16 块（每块 94 天）| 组合数 C(16,8) = 12870
+  PBO = freq(lambda<=0) = 13.5%（1739/12870）
+  lambda 分位：5%=-1.45 | 50%=+2.31 | 95%=+4.60
+  IS 冠军多样性：21/99 个不同候选被选为冠军
+  解读：PBO 越接近 0 排名传递性越好；>50% 严重预警（IS 最优比随机挑还不可信）
+================================================================
+
+
+========================================================================
+[2026-09-22 00:54:19] Search Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 55, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.95, 'high': 0.95, 'step': 0.1}, 'extremes__k': {'low': 0.95, 'high': 0.95, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-kurt', 'mean-variance-maxdd-kurt', 'mean-variance-avgdd-kurt', 'mean-semideviation-avgdd', 'mean-mad-maxdd-kurt', 'mean-mad-avgdd-kurt', 'mean-mad-maxdd-cvar-kurt', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar-kurt', 'mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 252, 'high': 756, 'step': 252}}
+
+========================================================================
+[2026-09-22 00:54:21] Parameter Space
+========================================================================
+{'test_size': 252, 'train_size': 1008, 'n_test_folds': 2, 'n_jobs': 4, 'cv_n_jobs': 8, 'n_trials': 2000, 'patience': 200, 'sampler': 'tpe', 'min_delta': 0.0001, 'seed': 42, 'inner_purged_size': 2, 'inner_embargo_size': 2, 'candidate_mode': 'all', 'top_k': 50, 'S': 16, 'verbose': True}
+
+========================================================================
+[2026-09-22 01:14:28] CSCV PBO 诊断
+========================================================================
+================================================================
+       CSCV PBO 诊断（标准版：单次搜索 + 静态参数族）
+================================================================
+  搜索：trials=2000 | sampler=tpe | 候选 all = 72 | 搜索段 1008 天
+  收益流：72 参数 x 6 块 x 252 天 = 1512 天
+  评估区：2020-02-27 00:00:00+08:00 ~ 2026-05-25 00:00:00+08:00
+  CSCV：S=16 块（每块 94 天）| 组合数 C(16,8) = 12870
+  PBO = freq(lambda<=0) = 17.9%（2304/12870）
+  lambda 分位：5%=-2.72 | 50%=+1.96 | 95%=+3.57
+  IS 冠军多样性：19/72 个不同候选被选为冠军
+  解读：PBO 越接近 0 排名传递性越好；>50% 严重预警（IS 最优比随机挑还不可信）
+================================================================
+
+========================================================================
+[2026-09-22 01:17:26] Search Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 55, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.9, 'step': 0.1}, 'extremes__k': {'low': 0.1, 'high': 0.9, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-kurt', 'mean-variance-maxdd-kurt', 'mean-variance-avgdd-kurt', 'mean-semideviation-avgdd', 'mean-mad-maxdd-kurt', 'mean-mad-avgdd-kurt', 'mean-mad-maxdd-cvar-kurt', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar-kurt', 'mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 252, 'high': 756, 'step': 252}}
+
+========================================================================
+[2026-09-22 01:17:30] Parameter Space
+========================================================================
+{'test_size': 252, 'train_size': 1008, 'n_test_folds': 2, 'n_jobs': 4, 'cv_n_jobs': 8, 'n_trials': 2000, 'patience': 200, 'sampler': 'tpe', 'min_delta': 0.0001, 'seed': 42, 'inner_purged_size': 2, 'inner_embargo_size': 2, 'candidate_mode': 'all', 'top_k': 50, 'S': 16, 'verbose': True}
+
+========================================================================
+[2026-09-22 01:27:33] CSCV PBO 诊断
+========================================================================
+================================================================
+       CSCV PBO 诊断（标准版：单次搜索 + 静态参数族）
+================================================================
+  搜索：trials=2000 | sampler=tpe | 候选 all = 105 | 搜索段 1008 天
+  收益流：105 参数 x 6 块 x 252 天 = 1512 天
+  评估区：2020-02-27 00:00:00+08:00 ~ 2026-05-25 00:00:00+08:00
+  CSCV：S=16 块（每块 94 天）| 组合数 C(16,8) = 12870
+  PBO = freq(lambda<=0) = 11.3%（1458/12870）
+  lambda 分位：5%=-0.79 | 50%=+1.97 | 95%=+3.95
+  IS 冠军多样性：32/105 个不同候选被选为冠军
+  解读：PBO 越接近 0 排名传递性越好；>50% 严重预警（IS 最优比随机挑还不可信）
+================================================================
+
+
+========================================================================
+[2026-09-22 01:43:29] Search Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 55, 'high': 55, 'step': 5}, 'nondomin__threshold': {'low': -0.3, 'high': -0.3, 'step': 0.1}, 'correlate__threshold': {'low': 0.9, 'high': 0.9, 'step': 0.1}, 'extremes__k': {'low': 0.9, 'high': 0.9, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 252, 'high': 756, 'step': 252}}
