@@ -123,7 +123,11 @@ def build_pipeline(params: dict) -> Pipeline:
     if isinstance(fm, str):
         fm = FITNESS_MEASURES[fm]
     return Pipeline([
-        ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+        # 严格模式：剔除所有包含缺失值的资产（前导/末端/内部一律剔除）。
+        # 搜索（CPCV 各路径 fit）与评估/应用（各折 fit）的池口径由
+        # SelectComplete 统一保证：fit 可见列 = 完整资产集，fit/predict
+        # 同一掩码，无需外层人工池过滤。
+        ("complete", SelectComplete(drop_assets_with_internal_nan=True)),
         ("variance", DropZeroVariance(threshold=1e-8)),
         ("extremes", SelectKExtremes(
             k=params["extremes__k"], measure=ExtraRiskMeasure.KURTOSIS, highest=False)),
@@ -158,7 +162,7 @@ def build_pipeline_src() -> str:
     str : "Pipeline([...])" 源码片段（保留原缩进），如::
 
         Pipeline([
-            ("complete", SelectComplete(drop_assets_with_internal_nan=False)),
+            ("complete", SelectComplete(drop_assets_with_internal_nan=True)),
             ...
             ("optimization", EqualWeighted()),
         ])
