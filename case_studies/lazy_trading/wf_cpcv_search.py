@@ -286,19 +286,23 @@ def run_params_on_fold(X, fold_idx, params, test_size=126, train_size=756,
 
     语义与 nested_adaptive_search 折末完全一致：模型 fit 在训练段最近
     params["train_size"] 天（内层训练子窗口，注意与外层参数 train_size
-    同名不同义），随后预测全训练段与纯净 test 段 —— 供参数扰动 /
-    敏感性 / Top-K 候选评估 / 消融等"固定参数直接应用"场景复用（只
-    评估、不搜索、不选参，不构成 OOS 消耗）。
+    同名不同义），随后在同一拟合窗上 predict 得 train_ptf（纯样本内口径：
+    fit 什么就评什么，实际用了多少天就评多少天，不掺未拟合天），并 predict
+    该折纯净 test 段得 test_ptf —— 供参数扰动 / 敏感性 / Top-K 候选评估 /
+    消融等"固定参数直接应用"场景复用（只评估、不搜索、不选参，不构成
+    OOS 消耗）。
     fold_idx 与嵌套搜索折位对齐：调用方须使用与 nested_adaptive_search
     相同的 test_size / train_size / purged_size / reduce_test，否则折位
-    错位（扰动/敏感性模块的逐折循环天然满足）。
+    错位（扰动/敏感性模块的逐折循环天然满足；derive_wf_kwargs 优先读取
+    folds 记录里的 "outer_wf" 显式外层窗口）。
     pipeline_builder : 可选的管道构建器（默认 build_pipeline），供消融
     （步骤开关变体）等场景注入；签名与 build_pipeline 一致（params → Pipeline）。
 
     Returns
     -------
     (train_ptf, test_ptf) : 均为 skfolio Portfolio（日收益序列），
-        train_ptf 覆盖整个外层训练段、test_ptf 覆盖该折纯净 OOS 段
+        train_ptf 覆盖拟合窗（最近 params["train_size"] 天）、
+        test_ptf 覆盖该折纯净 OOS 段
     """
     outer_cv = _outer_wf(X, test_size, train_size, purged_size, reduce_test)
     tr_idx, te_idx = list(outer_cv.split(X))[fold_idx]
@@ -308,7 +312,7 @@ def run_params_on_fold(X, fold_idx, params, test_size=126, train_size=756,
     builder = pipeline_builder if pipeline_builder is not None else build_pipeline
     m = builder(params)
     m.fit(w)
-    return m.predict(X_tr), m.predict(X.iloc[te_idx])
+    return m.predict(w), m.predict(X.iloc[te_idx])
 
 
 def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
@@ -339,8 +343,12 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
     Returns
     -------
     list : [{fold, params, score, test, train, "train ASR", "test ASR",
-             p_luck, margin, max_p95, n_trials, study}]；params 为
+             outer_wf, p_luck, margin, max_p95, n_trials, study}]；params 为
         walkforward 同形参数（fitness_measures 为名称字符串，可序列化）；
+        "train ASR"/train = 拟合窗（最近内层 train_size 天）纯样本内口径，
+        "test ASR"/test = 该折纯净 OOS 段；outer_wf = 外层窗口四件套
+        {test_size, train_size, purged_size, reduce_test}（显式折位元数据，
+        derive_outer_window 优先读取，不靠段长反推）；
         p_luck/margin/max_p95/n_trials 为该折 study 的 empirical_deflate
         （经验零分布 GPD 上尾 deflate）摘要——p_luck = 最优分是纯运气挑出
         的概率（越高越可疑；旧口径 dsr = 1 − p_luck，因分数非 Sharpe 不再
@@ -367,9 +375,10 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
                                                  sampler=sampler,
                                                  inner_purged_size=inner_purged_size,
                                                  inner_embargo_size=inner_embargo_size)
-        # 2) 用该折最优参数做普通 OOS 应用：fit最近train_size天 → 预测纯净
-        #    test段（run_params_on_fold 为公共应用函数，与扰动/敏感性/Top-K
-        #    候选评估同一入口；同窗口同口径，行为与原折末内联逻辑一致）
+        # 2) 用该折最优参数做普通 OOS 应用：fit 最近 train_size 天 → train
+        #    侧预测同一拟合窗（纯样本内口径）、test 侧预测纯净 test 段
+        #    （run_params_on_fold 为公共应用函数，与扰动/敏感性/Top-K
+        #    候选评估同一入口；同窗口同口径）
         train_ptf, test_ptf = run_params_on_fold(
             X, i, best, test_size=test_size, train_size=train_size,
             purged_size=outer_purged_size, reduce_test=outer_reduce_test)
@@ -380,6 +389,10 @@ def nested_adaptive_search(X, test_size=126, train_size=756, space=None,
         d = empirical_deflate(study)
         folds.append({"fold": i, "params": best, "score": score,
                       "test": test_ptf, "train": train_ptf,
+                      "outer_wf": {"test_size": test_size,
+                                   "train_size": train_size,
+                                   "purged_size": outer_purged_size,
+                                   "reduce_test": outer_reduce_test},
                       "train ASR": train_ptf.annualized_sharpe_ratio,
                       "test ASR": test_ptf.annualized_sharpe_ratio,
                       "p_luck": d["p_luck"],
@@ -462,13 +475,24 @@ def derive_outer_window(folds, purged_size=1, reduce_test=False):
 
     adaptive_multi_paths / 消融 / 扰动等应用函数若窗口参数与嵌套搜索不一致
     （如漏传 test_size/train_size），外层 split 会静默错位甚至产出空折集
-    ——比报错更危险。本函数从每折 train/test Portfolio 的实际段长度取众数
-    还原窗口（尾折因 reduce_test 缩短，用众数而非末折），产出可直接 ** 传
-    给 adaptive_multi_paths 的窗口四键。
-    purged_size / reduce_test 无法从结果反推：purged_size 默认 1（与嵌套
-    搜索默认一致，务必核对搜索配置），reduce_test 默认 False（压测语义：
-    不产出不完整尾段，与 notebook 原语义一致）。
+    ——比报错更危险。产出可直接 ** 传给 adaptive_multi_paths 的窗口四键。
+    优先读取折记录里搜索侧写入的 "outer_wf" 显式外层窗口（nested_adaptive_
+    search / adaptive_wf_search 记录，四键全真实值，含无法从段长反推的
+    purged_size / reduce_test）——此路径下本函数入参被忽略。
+    旧数据（无 "outer_wf" 键）回退：train/test Portfolio 实际段长度取众数
+    还原窗口（尾折因 reduce_test 缩短，用众数而非末折），purged_size 默认
+    1、reduce_test 默认 False（压测语义），须与搜索配置核对。
+    NOTE: train 侧评分修正为拟合窗（最近内层 train_size 天）后，新 folds 的
+    train 段长是内层窗口、不能再反推外层 train_size——回退路径只对口径修正
+    前的旧数据成立；新搜索结果一律走显式 "outer_wf"。
     """
+    for f in folds:
+        ow = f.get("outer_wf")
+        if ow:
+            return {"test_size": int(ow["test_size"]),
+                    "train_size": int(ow["train_size"]),
+                    "outer_purged_size": ow["purged_size"],
+                    "outer_reduce_test": ow["reduce_test"]}
     te_lens = Counter(len(f["test"].returns) for f in folds)
     tr_lens = Counter(len(f["train"].returns) for f in folds)
     return {"test_size": int(te_lens.most_common(1)[0][0]),

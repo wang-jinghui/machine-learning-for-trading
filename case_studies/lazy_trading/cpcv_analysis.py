@@ -848,10 +848,11 @@ def rank_pbo_logit(X, folds, wf_kwargs=None, purged_size=1, reduce_test=True,
     纪律：只评估、不选参。若诊断显示 best 并非 test 排名最优，不得据此
     换参——用 OOS 排名回改策略会作废该段 OOS。
 
-    折位对齐：wf_kwargs 缺省时从 folds 推导众数窗口（derive_outer_window），
-    purged_size / reduce_test 显式透传（默认 1 / True 与搜索侧一致，务必与
-    搜索配置核对）。校验：best 重放 ASR 必须复现 folds 的 "train ASR"/
-    "test ASR"（max|Δ|>1e-6 视为口径错位直接报错，防静默错位）。
+    折位对齐：wf_kwargs 缺省时从 folds 的 "outer_wf" 显式外层窗口读取折
+    位四件套（旧数据回退众数窗口推导，此时 purged_size / reduce_test 用
+    本函数入参，默认 1 / True，务必与搜索配置核对）。校验：best 重放
+    ASR 必须复现 folds 的 "train ASR"/"test ASR"（max|Δ|>1e-6 视为口径
+    错位直接报错，防静默错位）。
 
     Parameters
     ----------
@@ -860,8 +861,8 @@ def rank_pbo_logit(X, folds, wf_kwargs=None, purged_size=1, reduce_test=True,
         test ASR / params）
     wf_kwargs : dict | None，run_params_on_fold 折位参数 {test_size,
         train_size, purged_size, reduce_test}；None = 从 folds 推导
-    purged_size : int，外层 WF purge（仅 wf_kwargs 缺省推导时使用，默认 1）
-    reduce_test : bool，外层 WF 尾段策略（默认 True 与搜索侧一致，含缩短尾折）
+    purged_size : int，外层 WF purge（仅旧数据回退推导时使用，默认 1）
+    reduce_test : bool，外层 WF 尾段策略（旧数据回退用，默认 True 含缩短尾折）
     score : "composite" | "asr"，主口径排名分数。composite = asr*0.5 - maxdd
         + skew（与 inner_cpcv_score 同构的单段版，选参效用函数一致）；两种
         口径的排名均在 scores 表输出，主口径决定 best 的 λ / PBO 报告

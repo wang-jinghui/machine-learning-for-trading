@@ -113,9 +113,9 @@ def arm_oos_path(X, folds, drops=(), wf_kwargs=None, purged_size=1,
     OOS 单测（run_params_on_fold，无内层 CPCV 展开，与部署语义一致），
     所有折的 test 段拼接为一条 MultiPeriodPortfolio；drops=() 时为基准臂。
 
-    wf_kwargs 未给时从 folds 推导折位参数（与嵌套搜索 1:1 对齐）；
-    purged_size / reduce_test 默认 1 / True（与搜索侧一致，含缩短尾折），
-    须与搜索配置核对。
+    wf_kwargs 未给时从 folds 推导折位参数（新 folds 为 "outer_wf" 显式
+    外层窗口，旧数据回退段长众数；与嵌套搜索 1:1 对齐）；purged_size /
+    reduce_test 入参仅旧数据回退时生效，须与搜索配置核对。
     """
     if wf_kwargs is None:
         wf_kwargs = derive_wf_kwargs(folds, purged_size=purged_size,
@@ -143,8 +143,8 @@ def ablate(X, folds, arms=None, wf_kwargs=None, purged_size=1,
     X : pd.DataFrame，与 nested_adaptive_search 同口径的收益数据
     folds : list，nested_adaptive_search 返回结果（每折 params 复用，不重搜）
     arms : list[str] | None，臂名（ARMS 键）；None = 全部臂
-    wf_kwargs : dict | None，run_params_on_fold 的折位参数（None = 从
-        folds 实测段长推导众数窗口；purged/reduce 用下方显式参数）
+    wf_kwargs : dict | None，run_params_on_fold 的折位参数（None = 优先
+        读 folds 的 "outer_wf" 显式外层窗口，旧数据回退实测段长众数）
     metrics : list[str]，绩效指标（skfolio Portfolio/MPP 属性名）
 
     Returns

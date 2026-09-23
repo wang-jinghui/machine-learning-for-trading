@@ -143,10 +143,12 @@ def derive_wf_kwargs(folds, purged_size=1, reduce_test=True):
 
     折位对齐要求：扰动评估必须与 nested_adaptive_search 使用相同的
     test_size / train_size / purged_size / reduce_test，否则 split 错位、
-    评估段不再是该折真实 OOS。窗口两键取自公共推导 derive_outer_window
-    （fold 内 train/test Portfolio 实际段长度众数）；purged_size /
-    reduce_test 按嵌套搜索默认 1 / True（搜索侧 reduce_test=True 时含
-    尾折，扰动必须同样产出尾折才能逐折对齐），调用方须与搜索配置核对。
+    评估段不再是该折真实 OOS。窗口四键取自公共推导 derive_outer_window：
+    新 folds 记录带 "outer_wf" 显式外层窗口（搜索侧写入，四键全真实值，
+    最高优先）；旧数据（无该键）回退为 fold 内 train/test Portfolio 实际
+    段长度众数，此时 purged_size / reduce_test 用本函数入参（搜索侧
+    reduce_test=True 时含尾折，扰动必须同样产出尾折才能逐折对齐），
+    调用方须与搜索配置核对。
     """
     w = derive_outer_window(folds, purged_size=purged_size,
                             reduce_test=reduce_test)
@@ -192,8 +194,8 @@ def perturbation_mc(X, folds, R=None, frac=0.2, space=None, fitness_topk=3,
     fitness_topk : int，每折 fitness 切换池深度（study 内去重 top-k）
     exclude : tuple，不扰动的数值键（默认不排除——含 train_size 在内的
         全部自适应参数都参与扰动，见 perturb_params）
-    wf_kwargs : dict | None，run_params_on_fold 的折位参数（None = 从
-        folds 推导众数窗口，purged_size/reduce_test 用下方显式参数）
+    wf_kwargs : dict | None，run_params_on_fold 的折位参数（None = 优先读
+        folds 的 "outer_wf" 显式外层窗口，旧数据回退众数窗口推导）
     keep_params : bool，样本表是否保留扰动后参数列（审计扰动实际值）
     seed : int，随机种子（逐折分叉流：每折 rng = default_rng(seed+fold)，
         保证逐折独立且整体可复现）
@@ -389,9 +391,10 @@ def topk_paths_eval(X, folds, k=5,
     高原的 OOS 侧印证"——gap2top1 小的候选若 OOS 同样接近，说明生产
     参数处在一个稳定平台而非运气孤峰。
 
-    wf_kwargs 未给时从 folds 推导折位参数（与嵌套搜索 1:1 对齐，防静默
-    错位）；purged_size / reduce_test 默认 1 / True（与搜索侧一致，含
-    缩短尾折），须与搜索配置核对。某折候选不足该 rank 档时整档跳过
+    wf_kwargs 未给时从 folds 推导折位参数（新 folds 为 "outer_wf" 显式
+    外层窗口，旧数据回退段长众数；与嵌套搜索 1:1 对齐，防静默错位）；
+    purged_size / reduce_test 入参仅旧数据回退时生效，须与搜索配置核对。
+    某折候选不足该 rank 档时整档跳过
     （保证各 rank 均为全折完整路径，长度可比）。
 
     Returns

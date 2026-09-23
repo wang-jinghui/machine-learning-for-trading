@@ -192,9 +192,12 @@ def adaptive_wf_search(X, test_size=126, train_size=630, space=None,
     -------
     list : 与 nested_adaptive_search 同构的 fold_results
         [{fold, params, score, test, train, "train ASR", "test ASR",
-          p_luck, margin, max_p95, n_trials, study}]
-        ——score = 该折 IS 拟合分数（Optuna best value，选择依据；WFE
-        判读用 test ASR / score）。p_luck/margin/max_p95/n_trials
+          outer_wf, p_luck, margin, max_p95, n_trials, study}]
+        ——"train ASR"/train = 拟合窗（最近内层 train_size 天）纯样本内
+        口径（与该折 score 同口径）；outer_wf = 外层窗口四件套（显式
+        折位元数据，derive_outer_window 优先读取）；score = 该折 IS 拟合
+        分数（Optuna best value，选择依据；WFE 判读用 test ASR / score）。
+        p_luck/margin/max_p95/n_trials
         为该折 study 的 empirical_deflate（经验零分布 GPD 上尾）摘要
         ——与 "test ASR"(OOS) 对照即 "p_luck 高 + OOS 显著下降 → 过拟合"
         判据；study 为该折 optuna study（trial 级全记录，可复算 deflate）。
@@ -214,8 +217,9 @@ def adaptive_wf_search(X, test_size=126, train_size=630, space=None,
                                               patience=patience, min_delta=min_delta,
                                               verbose=verbose, seed=seed,
                                               sampler=sampler)
-        # 2) 该折最优参数普通 OOS 应用：fit 最近 train_size 天 → 预测纯净
-        #    test 段（run_params_on_fold 为公共应用函数，与扰动/敏感性/
+        # 2) 该折最优参数普通 OOS 应用：fit 最近 train_size 天 → train 侧
+        #    预测同一拟合窗（纯样本内口径）、test 侧预测纯净 test 段
+        #    （run_params_on_fold 为公共应用函数，与扰动/敏感性/
         #    Top-K 候选评估同一入口；同窗口同口径，折位对齐保证一致）
         train_ptf, test_ptf = run_params_on_fold(
             X, i, best, test_size=test_size, train_size=train_size,
@@ -226,6 +230,10 @@ def adaptive_wf_search(X, test_size=126, train_size=630, space=None,
         d = empirical_deflate(study)
         folds.append({"fold": i, "params": best, "score": score,
                       "test": test_ptf, "train": train_ptf,
+                      "outer_wf": {"test_size": test_size,
+                                   "train_size": train_size,
+                                   "purged_size": outer_purged_size,
+                                   "reduce_test": outer_reduce_test},
                       "train ASR": train_ptf.annualized_sharpe_ratio,
                       "test ASR": test_ptf.annualized_sharpe_ratio,
                       "p_luck": d["p_luck"],

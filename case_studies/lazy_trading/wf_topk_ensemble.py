@@ -10,10 +10,10 @@
   执行纯筛选链（build_pipeline 去掉 EqualWeighted 的前 5 步）→ 资产集；
 * 融合池：资产出现票数 ≥ min_votes 后按 X 列序过滤（默认 1 = 纯并集
   去重；>1 为频次阈值投票，过滤仅被少数参数组选中的偶发资产）；
-* 组合：融合池上 EqualWeighted，fit 训练段齐备行（S 为多窗口并集，可能含
-  较晚上市资产的前导 NaN；EW 无拟合参数，仅取无 NaN 行段满足 API 校验）
-  → predict 整个 IS 段与纯净 OOS test 段（与 run_params_on_fold 同构，
-  唯一差别是资产池）；
+* 组合：融合池上 EqualWeighted，fit top1 拟合窗齐备行（S 为多窗口并集，
+  可能含较晚上市资产的前导 NaN；EW 无拟合参数，仅取无 NaN 行段满足
+  API 校验）→ predict top1 拟合窗（最近 ts 天）与纯净 OOS test 段
+  （与 run_params_on_fold 同构，唯一差别是资产池）；
 * 对比：top1 的 fold_results 现成 train/test（引用不重算）vs 融合——
   fold 级指标表 + 全折 test 段拼接的完整 OOS 路径指标。
 
@@ -111,12 +111,14 @@ def _ensemble_fold(X, fold_id, tr_idx, te_idx, cands, min_votes, builder,
     # NaN 会被 validate_data 拒绝）；predict 阶段的 NaN 处理与原 pipeline
     # 同机制（新上市资产的 NaN 段由 skfolio 组合层承担）。
     ew = EqualWeighted().fit(w.dropna())
-    ens_train = ew.predict(X_tr[S])
+    # IS 段 = top1 拟合窗（fit 什么就评什么；此前用整段 X_tr 会把未参与
+    # 搜索/拟合的更早天混进 IS 口径，与 run_params_on_fold 的 train 侧同步修正）
+    ens_train = ew.predict(w)
     ens_test = ew.predict(X.iloc[te_idx][S])
     ens_train.name = f"EnsTrain{fold_id}"   # predict 不接受 portfolio_params(0.20.x), 预测后设置名称
     ens_test.name = f"EnsFold{fold_id}"
     # 段长度对齐校验：融合与 top1 必须覆盖同一 IS / OOS 段（防静默错位）
-    assert len(ens_train.returns) == len(X_tr), "融合 IS 段长度与训练段不一致"
+    assert len(ens_train.returns) == len(w), "融合 IS 段长度与 top1 拟合窗不一致"
     assert len(ens_test.returns) == len(te_idx), "融合 OOS 段长度与 test 段不一致"
     return {"fold": fold_id, "train": ens_train, "test": ens_test,
             "assets": S,
@@ -146,10 +148,11 @@ def topk_ensemble_eval(X, folds, k=10, min_votes=1,
         保留被 >= min_votes 组参数选中的资产（频次投票，过滤偶发资产）
     metrics : tuple，完整 OOS 路径对比指标（skfolio 现成属性名）
     wf_kwargs : dict | None，run_params_on_fold 折位参数（test_size /
-        train_size / purged_size / reduce_test）；None 时从 folds 推导
-        （与嵌套搜索 1:1 对齐，防静默错位），须与搜索配置核对
-    purged_size / reduce_test : 未给 wf_kwargs 时的推导默认（与搜索侧
-        默认 1 / True 一致，含缩短尾折）
+        train_size / purged_size / reduce_test）；None 时优先读 folds 的
+        "outer_wf" 显式外层窗口（旧数据回退段长众数推导，与嵌套搜索
+        1:1 对齐，防静默错位），须与搜索配置核对
+    purged_size / reduce_test : 旧数据回退推导时的默认（出 "outer_wf"
+        时被忽略；与搜索侧默认 1 / True 一致，含缩短尾折）
     verbose : bool，逐折进度与空池告警打印
     pipeline_builder : 可选的管道构建器（默认 build_pipeline），签名与
         build_pipeline 一致（params → Pipeline）；供消融变体注入
