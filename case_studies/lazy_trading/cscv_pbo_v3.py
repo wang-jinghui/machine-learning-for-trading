@@ -102,6 +102,7 @@ DEFAULT_CONFIG = Path(__file__).resolve().parent / "cpcv_parameter_search_config
 __all__ = [
     "cscv_pbo",
     "build_returns_matrix",
+    "calc_dsr_from_matrix",
     "cscv_core",
     "enumerate_space",
     "expand_range",
@@ -747,6 +748,52 @@ def cscv_pbo(X, space=None, *, block_size=252, S=16, mat_n_jobs=None,
 
 
 # ---------------------------------------------------------------------------
+# DSR（论文口径）：从 result["matrix"] 直接计算 Deflated Sharpe Ratio
+# ---------------------------------------------------------------------------
+def calc_dsr_from_matrix(M):
+    """论文口径 Deflated Sharpe Ratio（Bailey & López de Prado 2014）。
+
+    输入 = cscv_pbo 的 result["matrix"]（日频 T×N 的 WF-OOS 收益流）：
+    每个候选一条轨迹 -> 一个日频 SR 作为 trial 分数，被 deflate 的观测 =
+    全样本 SR 最高的列。两步：
+        SR* = √V·[(1-γ)Φ⁻¹(1-1/N) + γΦ⁻¹(1-1/(N·e))]，γ = 欧拉常数
+        DSR = Φ[(SR-SR*)·√(T-1) / √(1 - γ3·SR + (γ4-1)/4·SR²)]
+    γ3/γ4 取冠军列的偏度/非超额峰度（正态 γ4 = 3）；全程日频口径。
+    注意：与 cpcv_analysis.calc_dsr 不是同一个量（那边是 MC 经验 p 值，
+    缺 PSR 变换）。
+
+    Returns
+    -------
+    dict : dsr / z_score / sr_obs / sr_star / margin / V / N / T / skew /
+        kurt / champion（冠军列标签）
+    """
+    from scipy.stats import norm
+
+    if not isinstance(M, pd.DataFrame):
+        M = pd.DataFrame(np.asarray(M, dtype=float))
+    srs = M.mean() / M.std()                        # 日频 SR，每列一个
+    champion = srs.idxmax()
+    sr = float(srs[champion])
+    N, T = int(M.shape[1]), int(M.shape[0])
+    V = float(srs.var(ddof=1))                      # trial 分数间方差
+
+    x = M[champion].to_numpy(dtype=float)
+    xm = x - x.mean()
+    g3 = float((xm ** 3).mean() / xm.std() ** 3)    # 偏度
+    g4 = float((xm ** 4).mean() / xm.std() ** 4)    # 非超额峰度（正态=3）
+
+    euler = np.euler_gamma
+    sr_star = float(np.sqrt(V) * ((1 - euler) * norm.ppf(1 - 1 / N)
+                                  + euler * norm.ppf(1 - 1 / (N * np.e))))
+    inflation = max(1.0 - g3 * sr + (g4 - 1.0) / 4.0 * sr ** 2, 1e-8)
+    z = (sr - sr_star) * np.sqrt(T - 1) / np.sqrt(inflation)
+
+    return {"dsr": float(norm.cdf(z)), "z_score": float(z), "sr_obs": sr,
+            "sr_star": sr_star, "margin": sr - sr_star, "V": V,
+            "N": N, "T": T, "skew": g3, "kurt": g4, "champion": champion}
+
+
+# ---------------------------------------------------------------------------
 # 报告与绘图
 # ---------------------------------------------------------------------------
 def build_report(res) -> str:
@@ -1075,4 +1122,4 @@ def plot_topk(res, k=3, figsize=(10, 4), save_path=None):
         fig.savefig(save_path, bbox_inches="tight")
     display(fig)
     plt.close(fig)
-    return fig
+    #return fig
