@@ -369,35 +369,50 @@ def report_ann_distribution(path_anns, oos_ann):
 # ---------------------------------------------------------------------------
 # OOS vs 基准净值对比图
 # ---------------------------------------------------------------------------
-def plot_oos_vs_bench(oos_mpt, bench_ret):
-    """WF OOS 策略净值 vs 基准净值（沪深300ETF）对比图。
+def plot_oos_vs_bench(oos_mpt, benchs, bench_labels=None):
+    """WF OOS 策略净值 vs 一个或多个基准净值的对比图。
 
     Parameters
     ----------
     oos_mpt : MultiPeriodPortfolio，WF OOS 顺序路径组合（其 returns_df 决定区间）
-    bench_ret : pd.Series，基准日收益序列；长于 OOS 区间时自动裁剪到
-        [start, end] 并对齐 OOS 索引（ffill 补缺口）
+    benchs : pd.Series | list[pd.Series]，单个或多个基准日收益序列；各序列长于
+        OOS 区间时自动裁剪到 [start, end] 并对齐 OOS 索引（ffill 补缺口）
+    bench_labels : str | list[str] | None，基准显示名称，与 benchs 一一对应；
+        None 时单基准用"基准"，多基准用"基准1"、"基准2"...
 
     Notes
     -----
     从 WF+CPCV+PS_252.ipynb 抽取；图内中文字体用 rc_context 局部设置，
     不依赖调用方全局 rcParams。
     """
+    bench_list = [benchs] if isinstance(benchs, pd.Series) else list(benchs)
+    if not bench_list:
+        raise ValueError("benchs 不能为空")
+
+    if bench_labels is None:
+        labels = ["基准"] if len(bench_list) == 1 else [f"基准{i + 1}" for i in range(len(bench_list))]
+    elif isinstance(bench_labels, str):
+        labels = [bench_labels]
+    else:
+        labels = list(bench_labels)
+    if len(labels) != len(bench_list):
+        raise ValueError(f"bench_labels 长度需与 benchs 一致：{len(labels)} vs {len(bench_list)}")
+
     returns_df = oos_mpt.returns_df
     start = returns_df.index[0]
     end = returns_df.index[-1]
 
     oos_nav = (1 + returns_df).cumprod()
-    bench_ret = bench_ret.loc[start:end].reindex(oos_nav.index).ffill()
-    bench_nav = (1 + bench_ret).cumprod()
 
     with plt.rc_context({"font.sans-serif": ["Microsoft YaHei", "SimHei", "DejaVu Sans"],
                          "axes.unicode_minus": False}):
         plt.figure(figsize=(10, 4))
         plt.plot(oos_nav.index, oos_nav.values, label="OOS (参数自适应+t固定)")
-        plt.plot(bench_nav.index, bench_nav.values, label="沪深300ETF", alpha=0.7)
+        for b_ret, b_label in zip(bench_list, labels):
+            b_nav = (1 + b_ret.loc[start:end].reindex(oos_nav.index).ffill()).cumprod()
+            plt.plot(b_nav.index, b_nav.values, label=b_label, alpha=0.7)
         plt.legend()
-        plt.title("OOS vs 沪深300ETF 净值")
+        plt.title(f"OOS vs {'/'.join(labels)} 净值")
         plt.show()
 
 
