@@ -33,6 +33,7 @@ v1/v2 保持不动（历史口径留档）。本模块复用 cpcv_search_base.bu
     out["pbo"]; out["loss_prob"]; out["degradation"]["slope"]
     out["dominance"]["fsd_holds"]; out["matrix"]; out["meta"]
     plot_cscv(out)                          # 四种分析图（各一张独立画布）
+    plot_dsr(out)                           # DSR 判定三联图（[5a]-[5c]）
     print(build_topk_report(out, k=5))      # topK 冠军候选验收（文本,零重算）
     plot_topk(out, k=5)                     # topK 评估区累计净值（黑虚线=全员截面中位）
     out_mdd = cscv_pbo(X, space=search_space, block_size=252, S=16,
@@ -109,6 +110,7 @@ __all__ = [
     "build_report",
     "build_topk_report",
     "plot_cscv",
+    "plot_dsr",
     "plot_topk",
     "load_space",
 ]
@@ -1097,12 +1099,143 @@ def plot_cscv(result, bins=60, figsize=(9, 4.6), dom_figsize=(14, 4.2),
     return figs
 
 
+def plot_dsr(res, dsr=None, figsize=(14, 4.2), save_path=None):
+    """DSR 判定三联图（单画布）：[5a] 试验分布与冠军/门槛 | [5b] 门槛-试验数
+    曲线 SR*(n) | [5c] z 尾概率判定。
+
+    消费 cscv_pbo 结果（result["matrix"]）：[5a] 用 N 条全样本日频 SR 直方图
+    （V 的实体来源）；dsr=None 时内部调 calc_dsr_from_matrix(result["matrix"])，
+    已算过可直接传入（如 info = calc_dsr_from_matrix(out["matrix"])）。口径与
+    calc_dsr_from_matrix 一致：全部日频未年化（DSR 公式口径），关键数字旁附
+    年化换算（x sqrt(252)，仅供参考、不改判定）。[5b] 大 n 段为“同 V、独立
+    试验”外推（图上已标注假设），追平点 = 曲线与 sr_obs 的对数二分交点。
+    save_path 给定时落盘；展示后关闭，不返回 Figure（notebook 中 display 与
+    返回值会双渲染，与 plot_topk 处理一致）。
+    """
+    import matplotlib.pyplot as plt
+    from IPython.display import display
+    from scipy.stats import norm
+
+    M = res["matrix"]
+    if dsr is None:
+        dsr = calc_dsr_from_matrix(M)
+    srs = (M.mean() / M.std()).to_numpy()      # N 条全样本日频 SR
+    sr, star, margin = dsr["sr_obs"], dsr["sr_star"], dsr["margin"]
+    z, V, N, T = dsr["z_score"], dsr["V"], dsr["N"], dsr["T"]
+    skew, kurt = dsr["skew"], dsr["kurt"]
+    gamma = np.euler_gamma
+    ann = np.sqrt(252.0)                       # 日频 -> 年化换算（仅标注用）
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize)
+
+    # ---- [5a] 试验分布 + 冠军/门槛两线 ----
+    ax = axes[0]
+    ax.hist(srs, bins=60, color="#4C72B0", alpha=0.75, edgecolor="white")
+    ax.axvline(sr, color="#C44E52", linewidth=1.8)
+    ax.axvline(star, color="black", linestyle="--", linewidth=1.4)
+    ymax = ax.get_ylim()[1]
+    ax.annotate("", xy=(sr, ymax * 0.55), xytext=(star, ymax * 0.55),
+                arrowprops=dict(arrowstyle="<->", color="#C44E52", lw=1.4))
+    ax.text(0.02, 0.97,
+            f"冠军 cand{dsr['champion']}：{sr:.4f}（年化 {sr * ann:.2f}）\n"
+            f"门槛 SR*：{star:.4f}（年化 {star * ann:.2f}）\n"
+            f"margin：{margin:.4f}（年化 {margin * ann:.2f}）",
+            transform=ax.transAxes, va="top", fontsize=8,
+            bbox=dict(fc="white", alpha=0.75, ec="none"))
+    ax.set_title(f"[5a] 试验分布与冠军/门槛（N={N}，T={T}，V={V:.2e}）")
+    ax.set_xlabel("全样本日频 SR（年化 = ×√252）")
+    ax.set_ylabel("候选频数")
+
+    # ---- [5b] 门槛-试验数曲线 SR*(n)（H0 噪声 deflate 法则可视化）----
+    ax = axes[1]
+
+    def _sr_star(n):
+        # p 在 n > ~1e15 时下溢为 1.0（ppf=inf），钳位保数值安全
+        p1 = np.minimum(1.0 - 1.0 / n, 1.0 - 1e-15)
+        p2 = np.minimum(1.0 - 1.0 / (n * np.e), 1.0 - 1e-15)
+        return np.sqrt(V) * ((1 - gamma) * norm.ppf(p1)
+                             + gamma * norm.ppf(p2))
+
+    lo_l, hi_l = np.log10(2.0), 16.0
+    if _sr_star(10.0 ** hi_l) >= sr:           # 对数二分求“追平点” n*
+        for _ in range(80):
+            mid = 0.5 * (lo_l + hi_l)
+            if _sr_star(10.0 ** mid) < sr:
+                lo_l = mid
+            else:
+                hi_l = mid
+        n_star = 10.0 ** (0.5 * (lo_l + hi_l))
+        hi_l = min(hi_l + 0.35, 16.0)
+    else:
+        n_star = None
+        hi_l = 16.0
+    ns = np.logspace(np.log10(2.0), hi_l, 500)
+    ax.plot(ns, _sr_star(ns), color="#55A868", linewidth=1.6)
+    ax.axhline(sr, color="#C44E52", linewidth=1.4)
+    ax.axvline(N, color="gray", linestyle=":", linewidth=1.0)
+    ax.plot([N], [star], marker="o", color="black", markersize=5)
+    ax.annotate(f"实际 N={N}\nSR*={star:.4f}", xy=(N, star), xytext=(8, -20),
+                textcoords="offset points", ha="left", va="top", fontsize=8)
+    if n_star is not None:
+        ax.plot([n_star], [sr], marker="o", color="#C44E52", markersize=6)
+        ax.annotate(f"追平点 n*≈{n_star:.1e}\n（同 V、独立外推）",
+                    xy=(n_star, sr), xytext=(-8, 14),
+                    textcoords="offset points", ha="right", va="bottom",
+                    fontsize=8, color="#C44E52")
+    ax.text(0.02, sr, f"冠军 {sr:.4f}（年化 {sr * ann:.2f}）",
+            transform=ax.get_yaxis_transform(), ha="left", va="bottom",
+            fontsize=8, color="#C44E52")
+    ax.text(0.02, 0.02,
+            "SR*(n) = √V·[(1-γ)$\\Phi^{-1}$(1−1/n) + γ$\\Phi^{-1}$(1−1/(n·e))]\n"
+            "（H0：N(0,V) 抽 n 个取 max 的期望；γ=欧拉常数）",
+            transform=ax.transAxes, va="bottom", fontsize=7, color="#444444")
+    ax.set_xscale("log")
+    ax.set_ylim(0.0, sr * 1.30)
+    ax.set_title("[5b] 门槛随试验数 SR*(n)：√V 定高度、N 定位置")
+    ax.set_xlabel("试验数 n（log 轴；大 n 段为外推）")
+    ax.set_ylabel("门槛 SR*（日频，未年化）")
+
+    # ---- [5c] z 尾概率判定 ----
+    ax = axes[2]
+    z95 = float(norm.ppf(0.95))
+    xs = np.linspace(-4.0, 5.0, 600)
+    ax.plot(xs, norm.pdf(xs), color="#4C72B0", linewidth=1.6)
+    ax.fill_between(xs, norm.pdf(xs), where=xs >= z, color="#C44E52",
+                    alpha=0.35)
+    ax.axvline(z, color="#C44E52", linewidth=1.6)
+    ax.axvline(z95, color="gray", linestyle="--", linewidth=1.2)
+    p_tail = 1.0 - dsr["dsr"]
+    ax.annotate(f"右尾 = 1 − DSR ≈ {p_tail:.2%}\n（运气假设下的极端概率）",
+                xy=(z, 0.018), xytext=(z + 0.55, 0.30),
+                arrowprops=dict(arrowstyle="->", color="#C44E52", lw=1.0),
+                fontsize=8, color="#C44E52")
+    infl = max(1.0 - skew * sr + (kurt - 1.0) / 4.0 * sr ** 2, 1e-8)
+    eff = 1.0 - 1.0 / np.sqrt(infl)            # 忽略峰度偏度对 z 的影响幅度
+    ax.text(0.02, 0.97,
+            f"DSR = Φ(z) = {dsr['dsr']:.1%}（> 95% 通过）\n"
+            f"z = {z:.2f}｜95% 门槛 z = {z95:.2f}\n"
+            f"峰度 {kurt:.2f} → 方差膨胀 ×{infl:.3f}（z 影响 {eff:.1%}）\n"
+            f"偏度 {skew:.3f} ≈ 0",
+            transform=ax.transAxes, va="top", fontsize=8,
+            bbox=dict(fc="white", alpha=0.75, ec="none"))
+    ax.set_title(f"[5c] z 尾概率判定（DSR = {dsr['dsr']:.1%}）")
+    ax.set_xlabel("z（标准差数）")
+    ax.set_ylabel("标准正态密度")
+
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, bbox_inches="tight")
+    display(fig)
+    plt.close(fig)
+    #return fig
+
+
 def plot_topk(res, k=3, figsize=(10, 4), save_path=None):
     """topK 冠军候选评估区累计净值图（黑虚线 = 全员截面中位参照）。
 
     与 build_topk_report 同一 topK 口径（夺冠次数降序、并列按编号升序；
     实际数量 = min(k, 夺冠候选数)）。save_path 给定时落盘；展示后关闭，
-    返回 Figure（对象仍可再次 savefig）。
+    不返回 Figure（对象仍可再次 savefig）。
     """
     import matplotlib.pyplot as plt
     from IPython.display import display
