@@ -8259,3 +8259,197 @@ dtype: str
 50%       0.0176        0.0123  0.0959   0.5040
 95%       0.0449        0.0410  0.3173   0.5170
 mean      0.0183        0.0130  0.1014   0.5043
+
+========================================================================
+[2026-09-28 12:31:08] Ojective
+========================================================================
+mean(Annualized Sharpe Ratio)/2 - mean(MAXDD) + mean(SKEW)
+
+========================================================================
+[2026-09-28 12:31:08] Model Pipeline
+========================================================================
+Pipeline([
+        # 严格模式：剔除所有包含缺失值的资产（前导/末端/内部一律剔除）。
+        # 搜索（CPCV 各路径 fit）与评估/应用（各折 fit）的池口径由
+        # SelectComplete 统一保证：fit 可见列 = 完整资产集，fit/predict
+        # 同一掩码，无需外层人工池过滤。
+        ("complete", SelectComplete(drop_assets_with_internal_nan=True)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("extremes", SelectKExtremes(
+            k=params["extremes__k"], measure=ExtraRiskMeasure.KURTOSIS, highest=False)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=params["nondomin__min_n_assets"],
+            threshold=params["nondomin__threshold"],
+            fitness_measures=fm,
+        )),
+        ("correlate", DropCorrelated(threshold=params["correlate__threshold"])),
+        ("optimization", EqualWeighted()),
+    ])
+
+========================================================================
+[2026-09-28 12:32:37] Parameter Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 50, 'high': 60, 'step': 5}, 'nondomin__threshold': {'low': -0.6, 'high': -0.4, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.1, 'step': 0.1}, 'extremes__k': {'low': 0.8, 'high': 0.9, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-avgdd-kurt', 'mean-mad-avgdd-kurt', 'mean-mad-avgdd-cvar-kurt', 'mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 504, 'high': 504, 'step': 252}}
+
+========================================================================
+[2026-09-28 12:32:37] Space Size
+========================================================================
+72
+
+========================================================================
+[2026-09-28 12:33:42] Search Parameter
+========================================================================
+{'test_size': 252, 'train_size': 756, 'n_test_folds': 2, 'n_jobs': 4, 'cv_n_jobs': 10, 'n_trials': 72, 'patience': 24, 'sampler': 'random', 'min_delta': 0.0001, 'outer_purged_size': 0, 'outer_reduce_test': False, 'seed': 42, 'verbose': True}
+
+========================================================================
+[2026-09-28 12:57:04] Best Parameter
+========================================================================
+   fold   score  p_luck  margin  train ASR  test ASR  nondomin__min_n_assets  nondomin__threshold  correlate__threshold  extremes__k  train_size                     fitness  n_trials
+0     0  0.3396  0.8016 -0.0347     1.1267    1.7613                      60                 -0.5                   0.1          0.8         504  mean-mad-avgdd-cvar-sharpe        42
+1     1  0.7210  0.9157 -0.0654     1.9324    1.2289                      60                 -0.5                   0.1          0.8         504  mean-mad-avgdd-cvar-sharpe        45
+2     2  0.6467  0.7682 -0.0421     1.9578    0.5866                      55                 -0.5                   0.1          0.8         504  mean-mad-avgdd-cvar-sharpe        42
+3     3  0.5430  0.9631 -0.2190     2.0038   -0.0209                      60                 -0.6                   0.1          0.9         504  mean-mad-avgdd-cvar-sharpe        49
+4     4  0.7167  0.8612 -0.0397     1.4831   -0.0548                      60                 -0.4                   0.1          0.9         504  mean-mad-avgdd-cvar-sharpe        50
+5     5  0.5724  0.2599  0.0302     1.7267    1.2982                      60                 -0.4                   0.1          0.9         504  mean-mad-avgdd-cvar-sharpe        42
+6     6  0.4502  0.7867 -0.1370     1.5214    2.2739                      55                 -0.6                   0.1          0.8         504    mean-variance-avgdd-kurt        42
+
+========================================================================
+[2026-09-28 12:58:47] 消融实验
+========================================================================
+                                            说明  折数    天数  annualized_mean  annualized_sharpe_ratio  max_drawdown      skew  kurtosis
+臂                                                                                                                                   
+full                                   全管线（基准）   7  1764         0.077951                 1.098015      0.119246 -0.050753  6.769679
+no_extremes              无峰度预筛（剔除 extremes 步骤）   7  1764         0.061158                 1.252001      0.057200  0.022224  8.837396
+no_nondomin             无非支配筛选（剔除 nondomin 步骤）   7  1764         0.067648                 1.076957      0.090541 -0.042411  7.839146
+no_correlate             无去相关（剔除 correlate 步骤）   7  1764         0.077702                 0.832422      0.182507 -0.731029  8.257070
+no_extremes_correlate  剔除 extremes + correlate   7  1764         0.064555                 0.907532      0.134645 -0.626924  7.888768
+
+========================================================================
+[2026-09-28 13:00:11] OSS Summary
+========================================================================
+Mean                                     0.031%
+Annualized Mean                           7.80%
+Variance                                0.0020%
+Annualized Variance                       0.50%
+Semi-Variance                          0.00099%
+Annualized Semi-Variance                  0.25%
+Standard Deviation                        0.45%
+Annualized Standard Deviation             7.10%
+Semi-Deviation                            0.31%
+Annualized Semi-Deviation                 4.99%
+Mean Absolute Deviation                   0.30%
+CVaR at 95%                               1.05%
+EVaR at 95%                               1.53%
+Worst Realization                         2.47%
+CDaR at 95%                               8.30%
+MAX Drawdown                             11.61%
+Average Drawdown                          3.27%
+EDaR at 95%                               9.10%
+First Lower Partial Moment                0.15%
+Ulcer Index                               0.040
+Gini Mean Difference                      0.46%
+Value at Risk at 95%                      0.67%
+Drawdown at Risk at 95%                   7.18%
+Entropic Risk Measure at 95%               3.00
+Fourth Central Moment                 0.000000%
+Fourth Lower Partial Moment           0.000000%
+Skew                                     -5.08%
+Kurtosis                                676.97%
+Sharpe Ratio                              0.069
+Annualized Sharpe Ratio                    1.10
+Sortino Ratio                             0.098
+Annualized Sortino Ratio                   1.56
+Mean Absolute Deviation Ratio              0.10
+First Lower Partial Moment Ratio           0.20
+Value at Risk Ratio at 95%                0.046
+CVaR Ratio at 95%                         0.030
+Entropic Risk Measure Ratio at 95%      0.00010
+EVaR Ratio at 95%                         0.020
+Worst Realization Ratio                   0.013
+Drawdown at Risk Ratio at 95%            0.0043
+CDaR Ratio at 95%                        0.0037
+Calmar Ratio                             0.0027
+Average Drawdown Ratio                   0.0095
+EDaR Ratio at 95%                        0.0034
+Ulcer Index Ratio                        0.0077
+Gini Mean Difference Ratio                0.067
+Avg nb of Assets per Portfolio              8.4
+Number of Portfolios                          7
+Number of Failed Portfolios                   0
+Number of Fallback Portfolios                 0
+dtype: str
+
+========================================================================
+[2026-09-28 13:06:19] Ojective
+========================================================================
+mean(Annualized Sharpe Ratio)/2 - mean(MAXDD) + mean(SKEW)
+
+========================================================================
+[2026-09-28 13:06:19] Model Pipeline
+========================================================================
+Pipeline([
+        # 严格模式：剔除所有包含缺失值的资产（前导/末端/内部一律剔除）。
+        # 搜索（CPCV 各路径 fit）与评估/应用（各折 fit）的池口径由
+        # SelectComplete 统一保证：fit 可见列 = 完整资产集，fit/predict
+        # 同一掩码，无需外层人工池过滤。
+        ("complete", SelectComplete(drop_assets_with_internal_nan=True)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("extremes", SelectKExtremes(
+            k=params["extremes__k"], measure=ExtraRiskMeasure.KURTOSIS, highest=False)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=params["nondomin__min_n_assets"],
+            threshold=params["nondomin__threshold"],
+            fitness_measures=fm,
+        )),
+        ("correlate", DropCorrelated(threshold=params["correlate__threshold"])),
+        ("optimization", EqualWeighted()),
+    ])
+
+========================================================================
+[2026-09-28 13:06:59] Parameter Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 55, 'high': 55, 'step': 5}, 'nondomin__threshold': {'low': -0.5, 'high': -0.5, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.1, 'step': 0.1}, 'extremes__k': {'low': 0.9, 'high': 0.9, 'step': 0.1}, 'nondomin__fitness_measures': ['mean-variance-kurt', 'mean-variance-maxdd-kurt', 'mean-variance-avgdd-kurt', 'mean-semideviation-avgdd', 'mean-mad-maxdd-kurt', 'mean-mad-avgdd-kurt', 'mean-mad-maxdd-cvar-kurt', 'mean-mad-maxdd-cvar-sharpe', 'mean-mad-avgdd-cvar-kurt', 'mean-mad-avgdd-cvar-sharpe'], 'train_size': {'low': 504, 'high': 504, 'step': 252}}
+
+========================================================================
+[2026-09-28 13:06:59] Space Size
+========================================================================
+10
+
+========================================================================
+[2026-09-28 13:07:41] Search Parameter
+========================================================================
+{'test_size': 252, 'train_size': 756, 'n_test_folds': 2, 'n_jobs': 4, 'cv_n_jobs': 10, 'n_trials': 10, 'patience': 24, 'sampler': 'random', 'min_delta': 0.0001, 'outer_purged_size': 0, 'outer_reduce_test': False, 'seed': 42, 'verbose': True}
+
+========================================================================
+[2026-09-28 13:11:19] Best Parameter
+========================================================================
+   fold   score  p_luck  margin  train ASR  test ASR  nondomin__min_n_assets  nondomin__threshold  correlate__threshold  extremes__k  train_size                     fitness  n_trials
+0     0  0.3367     1.0     0.0     1.4668    2.3153                      55                 -0.5                   0.1          0.9         504         mean-mad-maxdd-kurt         6
+1     1  0.6241     1.0     0.0     2.1818    1.1068                      55                 -0.5                   0.1          0.9         504         mean-mad-maxdd-kurt         5
+2     2  0.5562     1.0     0.0     1.1699    1.4402                      55                 -0.5                   0.1          0.9         504    mean-variance-avgdd-kurt         5
+3     3  0.5430     1.0     0.0     2.0038   -0.0209                      55                 -0.5                   0.1          0.9         504  mean-mad-avgdd-cvar-sharpe         5
+4     4  0.7165     1.0     0.0     1.5051    1.4719                      55                 -0.5                   0.1          0.9         504  mean-mad-avgdd-cvar-sharpe         6
+5     5  0.5712     1.0     0.0     1.5451    0.3531                      55                 -0.5                   0.1          0.9         504  mean-mad-maxdd-cvar-sharpe         6
+6     6  0.1230     1.0     0.0     1.5049    0.8738                      55                 -0.5                   0.1          0.9         504    mean-semideviation-avgdd         6
+
+========================================================================
+[2026-09-28 13:13:36] Top 5 参数组合OOS:ASR,MEAN,MAXDD
+========================================================================
+      annualized_sharpe_ratio  annualized_mean  max_drawdown
+rank                                                        
+1                    1.037784         0.071760      0.144226
+2                    0.846168         0.047233      0.088833
+3                    1.406076         0.095701      0.128532
+4                    1.034638         0.081031      0.115382
+5                    1.376530         0.102411      0.108008
+
+========================================================================
+[2026-09-28 13:28:27] Top 5 参数组合OOS:ASR,MEAN,MAXDD
+========================================================================
+      annualized_sharpe_ratio  annualized_mean  max_drawdown
+rank                                                        
+1                    1.037784         0.071760      0.144226
+2                    0.846168         0.047233      0.088833
+3                    1.406076         0.095701      0.128532
+4                    1.034638         0.081031      0.115382
+5                    1.376530         0.102411      0.108008
