@@ -109,6 +109,37 @@ FITNESS_MEASURES = {
     "mean-variance-avgdd-cvar-kurt": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN, RiskMeasure.CVAR, ExtraRiskMeasure.KURTOSIS],
     "mean-variance-avgdd-kurt-sharpe": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS, RatioMeasure.SHARPE_RATIO],
     "mean-variance-mad-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.MEAN_ABSOLUTE_DEVIATION, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    # MEAN + 单一 RiskMeasure 全量组合补齐（11 键）：RiskMeasure 全部 15 个
+    # 非年化成员，其中 variance/semivariance/mad/avgdd 沿用上方既有键
+    "mean-std": [PerfMeasure.MEAN, RiskMeasure.STANDARD_DEVIATION],
+    "mean-semideviation": [PerfMeasure.MEAN, RiskMeasure.SEMI_DEVIATION],
+    "mean-cvar": [PerfMeasure.MEAN, RiskMeasure.CVAR],
+    "mean-evar": [PerfMeasure.MEAN, RiskMeasure.EVAR],
+    "mean-worst": [PerfMeasure.MEAN, RiskMeasure.WORST_REALIZATION],
+    "mean-cdar": [PerfMeasure.MEAN, RiskMeasure.CDAR],
+    "mean-maxdd": [PerfMeasure.MEAN, RiskMeasure.MAX_DRAWDOWN],
+    "mean-edar": [PerfMeasure.MEAN, RiskMeasure.EDAR],
+    "mean-flpm": [PerfMeasure.MEAN, RiskMeasure.FIRST_LOWER_PARTIAL_MOMENT],
+    "mean-ulcer": [PerfMeasure.MEAN, RiskMeasure.ULCER_INDEX],
+    "mean-gini": [PerfMeasure.MEAN, RiskMeasure.GINI_MEAN_DIFFERENCE],
+    # MEAN + 单一 RiskMeasure + avgdd + kurt 组合补齐（10 键）：与 CSCV 空间
+    # 选项对齐；variance/semivariance/semideviation/mad 四项及
+    # mean-variance-avgdd-cvar 沿用上方既有键
+    "mean-std-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.STANDARD_DEVIATION, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-cvar-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.CVAR, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-evar-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.EVAR, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-worst-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.WORST_REALIZATION, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-cdar-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.CDAR, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-maxdd-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.MAX_DRAWDOWN, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-edar-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.EDAR, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-flpm-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.FIRST_LOWER_PARTIAL_MOMENT, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-ulcer-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.ULCER_INDEX, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-gini-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.GINI_MEAN_DIFFERENCE, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    # CSCV 12 键候选集（4 风险度量 × {avgdd,maxdd,cvar} × kurt）缺口补齐（4 键）
+    "mean-semideviation-maxdd-kurt": [PerfMeasure.MEAN, RiskMeasure.SEMI_DEVIATION, RiskMeasure.MAX_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-mad-cvar-kurt": [PerfMeasure.MEAN, RiskMeasure.MEAN_ABSOLUTE_DEVIATION, RiskMeasure.CVAR, ExtraRiskMeasure.KURTOSIS],
+    "mean-std-maxdd-kurt": [PerfMeasure.MEAN, RiskMeasure.STANDARD_DEVIATION, RiskMeasure.MAX_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-std-cvar-kurt": [PerfMeasure.MEAN, RiskMeasure.STANDARD_DEVIATION, RiskMeasure.CVAR, ExtraRiskMeasure.KURTOSIS],
     # Ratio 组合
     "calmar-cvar": [RatioMeasure.CALMAR_RATIO, RiskMeasure.CVAR],
     "calmar-variance": [RatioMeasure.CALMAR_RATIO, RiskMeasure.VARIANCE],
