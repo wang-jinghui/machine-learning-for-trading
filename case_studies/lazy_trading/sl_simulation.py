@@ -38,13 +38,15 @@ purged_size 个间隔日；本模拟为"决策日次交易日建仓"（触发止
 用法::
 
     import sys; sys.path.insert(0, r"case_studies/lazy_trading")
-    from sl_simulation import load_sl_config, simulate_sl, summarize_sl
+    from sl_simulation import (fresh_model, load_sl_config, simulate_sl,
+                               summarize_sl)
 
     cfg = load_sl_config()                    # 止损条件 + 模拟调度（搜索配置读嵌套 toml）
     res  = simulate_sl(X, folds=folds, cfg=cfg)                  # SL 模拟
     base = simulate_sl(X, folds=folds, cfg=cfg, conditions=[])   # 无止损基线
     print(summarize_sl(res, base))            # 对比表
     print(res["epochs"]); print(res["triggers"])
+    fm = fresh_model(X, params_list)          # 多参数预筛：并集/交集/选中频次
 
 冒烟 CLI（小预算自检；--dd-threshold 覆盖 drawdown 阈值以便自动触发止损路径）::
 
@@ -547,6 +549,78 @@ def summarize_sl(result, baseline=None) -> pd.DataFrame:
     if baseline is not None:
         rows["无止损基线"] = _row(baseline)
     return pd.DataFrame(rows).T
+
+
+# ---------------------------------------------------------------------------
+# 多模型预筛对比：逐参数 fit -> 资产列表汇总（并集 / 交集 / 选中频次）
+# ---------------------------------------------------------------------------
+def fresh_model(X, params_list, *, verbose=True) -> dict:
+    """一组参数逐个 fit：汇总各模型的冻结头寸资产列表（并集/交集/频次）。
+
+    用途：对候选参数列表（如 CSCV 空间选项或搜索赢家邻域）做“选股稳定性”
+    体检——每个参数在截至数据末日的最近 train_size 天窗口 fit（与
+    simulate_sl 决策日拟合同口径，直接复用 _fit_epoch_targets），给出每个
+    模型的 asset 列表，并汇总全体模型间的交集、并集与逐资产被选中次数。
+
+    Parameters
+    ----------
+    X : pd.DataFrame，与 WF+CPCV 同口径收益数据（DatetimeIndex 升序）
+    params_list : list[dict]，每个元素为一组完整 pipeline 参数（契约同
+        build_pipeline），示例：
+        {'nondomin__min_n_assets': 55, 'nondomin__threshold': -0.5,
+         'correlate__threshold': 0.1, 'extremes__k': 0.5,
+         'nondomin__fitness_measures': 'mean-variance-avgdd-cvar',
+         'train_size': 252}
+    verbose : bool，打印逐模型摘要与汇总行
+
+    Returns
+    -------
+    dict :
+        models       : DataFrame 一行一个参数集（参数展开 + n_assets +
+                       assets 列表）
+        union        : list 任一模型选中的资产（升序）
+        intersection : list 全体模型共同选中的资产（升序）
+        counts       : DataFrame（index = 资产；count = 被选中次数；
+                       share = 被选中比例；按 count 降序、同频按名称升序）
+    """
+    if not params_list:
+        raise ValueError("params_list 为空")
+    X = X.sort_index()
+    n = len(X)
+    records, sel_sets = [], []
+    for i, params in enumerate(params_list):
+        p = dict(params)
+        ts = int(p["train_size"])
+        if not 0 < ts <= n:
+            raise ValueError(f"模型 {i}: train_size={ts} 超出可用数据范围 "
+                             f"(1~{n})")
+        assets, _ = _fit_epoch_targets(X, n - 1, p)
+        sel_sets.append(set(assets))
+        records.append({"model": i, **p, "n_assets": len(assets),
+                        "assets": assets})
+        if verbose:
+            print(f"模型 {i}: train_size={ts} | 选中 {len(assets)} 只 | "
+                  f"fitness={p.get('nondomin__fitness_measures')}")
+
+    models = pd.DataFrame(records)
+    all_assets = sorted(set().union(*sel_sets))
+    count = pd.Series(0, index=all_assets, dtype=int)
+    for s in sel_sets:
+        count.loc[list(s)] += 1
+    counts = pd.DataFrame({"count": count,
+                           "share": (count / len(params_list)).round(4)})
+    counts = counts.sort_values("count", ascending=False, kind="stable")
+
+    common = set(sel_sets[0])
+    for s in sel_sets[1:]:
+        common &= s
+    intersection = sorted(common)
+    if verbose:
+        print(f"[fresh_model] {len(params_list)} 个模型 | 并集 {len(all_assets)} 只"
+              f" | 交集 {len(intersection)} 只")
+
+    return {"models": models, "union": all_assets,
+            "intersection": intersection, "counts": counts}
 
 
 # ---------------------------------------------------------------------------
