@@ -38,12 +38,14 @@ purged_size 个间隔日；本模拟为"决策日次交易日建仓"（触发止
 用法::
 
     import sys; sys.path.insert(0, r"case_studies/lazy_trading")
-    from sl_simulation import (fresh_model, load_sl_config, simulate_sl,
-                               summarize_sl)
+    from sl_simulation import (fresh_model, load_sl_config, simulate_fixed,
+                               simulate_sl, simulate_wf, summarize_sl)
 
     cfg = load_sl_config()                    # 止损条件 + 模拟调度（搜索配置读嵌套 toml）
     res  = simulate_sl(X, folds=folds, cfg=cfg)                  # SL 模拟
     base = simulate_sl(X, folds=folds, cfg=cfg, conditions=[])   # 无止损基线
+    fix  = simulate_fixed(X, params, test_size=126)              # 固定参数：只 refit 不搜索
+    wf   = simulate_wf(X, params, test_size=126)                 # 对拍口径（WalkForward 原生）
     print(summarize_sl(res, base))            # 对比表
     print(res["epochs"]); print(res["triggers"])
     fm = fresh_model(X, params_list)          # 多参数预筛：并集/交集/选中频次
@@ -66,6 +68,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from skfolio import MultiPeriodPortfolio, Portfolio, RiskMeasure
+from skfolio.model_selection import WalkForward, cross_val_predict
 
 from cpcv_analysis import empirical_deflate
 from cpcv_search_base import build_pipeline
@@ -516,6 +519,317 @@ def simulate_sl(X, folds=None, cfg=None, conditions=None, start_date=None,
     return {"daily": daily, "epochs": epochs_df, "triggers": triggers_df,
             "legs": legs, "mpt": mpt, "searches": cache, "warnings": warns,
             "conditions": [c.name for c in conditions], "cfg": cfg, "bench": bench}
+
+
+# ---------------------------------------------------------------------------
+# 固定参数模拟：不搜索，只 refit（simulate_sl 的取参对偶版）
+# ---------------------------------------------------------------------------
+def simulate_fixed(X, params, reduce_test=True, test_size=126, conditions=None,
+                   min_epoch_days=0, verify=True, verbose=True, bench=None) -> dict:
+    """固定参数止损事件驱动模拟：不搜索，只 refit（不读配置文件，参数显式传入）。
+
+    与 simulate_sl 的两点差异：①决策日取参——不做 folds 复用 / 现场 CPCV
+    重搜，而是**全程冻结同一组策略参数**：每个 epoch 结束时以该参数在最新
+    决策日的最近 params["train_size"] 天窗口 refit 管道（滚动重训、参数
+    不变），次日按新冻结头寸建仓；②不读配置文件——epoch 上限由 test_size
+    直接给定，止损条件显式传入（None/[] 即无止损基线）。其余（逐日热路径 /
+    冷路径 leg 构建与口径自检 / 返回结构）与 simulate_sl 一致（summarize_sl
+    可直接消费）。用途：一组策略参数（如嵌套搜索赢家 / CSCV 冠军邻域）在
+    “无搜索”下的止损模拟对照——与 simulate_sl 的差值即“自适应重搜”的贡献。
+
+    Parameters
+    ----------
+    X : pd.DataFrame，与 WF+CPCV 同口径收益数据（DatetimeIndex 升序）
+    params : dict，一组完整 pipeline 参数（契约同 build_pipeline），示例：
+        {'nondomin__min_n_assets': 85, 'nondomin__threshold': -0.4,
+         'correlate__threshold': 0.1, 'extremes__k': 0.6,
+         'nondomin__fitness_measures': 'mean-variance-maxdd-kurt',
+         'train_size': 252}
+    reduce_test : bool，尾段语义（与 WalkForward.reduce_test 同构）：
+        True  -> 数据尾段不足一个完整 epoch（test_size 天）时缩短保留
+                 （exit_reason="end_of_data"，同 simulate_sl 缺省行为）；
+        False -> 不产出不完整尾段：剩余天数不足即停止建仓
+                 （止损提前触发的短 epoch 不受影响）
+    test_size : int，epoch 上限（天）：走满即“到期”换仓，同 simulate_sl
+        的 max_hold_days 缺省口径（= 外层 test_size）
+    conditions : list | None，止损条件（StopLossCondition / 配置 dict 均可）；
+        None / [] -> 无止损基线（不读配置文件，条件须显式传入）
+    min_epoch_days : int，epoch 前 N 个交易日禁用止损（0 = 不限制；
+        防重入后阈值边缘反复触发）
+    verify : bool，每 epoch 结束断言热路径与 Portfolio 属性一致
+    verbose : bool，打印 epoch 摘要
+    bench : pd.Series | None，基准收益序列（仅原样放入返回 dict，
+        供 notebook 画净值对比图，不参与任何模拟逻辑）
+
+    Returns
+    -------
+    dict : 与 simulate_sl 同构（daily/epochs/triggers/legs/mpt/searches/
+        warnings/conditions/bench）；searches 为决策日 -> refit 记录
+        {"params", "n_assets", "assets", "source": "fixed", "decision_day"}
+        （本函数不搜索，无 study / trial 字段）。
+    """
+    params = dict(params)                        # 冻结副本（防调用方后续改动）
+    ts = int(params["train_size"])
+
+    max_hold = int(test_size)
+    if max_hold < 1:
+        raise ValueError(f"test_size 需 >= 1（当前 {test_size}）")
+    min_epoch_days = int(min_epoch_days or 0)
+    conditions = make_conditions(conditions)     # None / [] -> 空条件（无止损）
+    if len({c.name for c in conditions}) != len(conditions):
+        raise ValueError("止损条件名重复（hit_<name> 列名冲突）")
+
+    X = X.sort_index()
+    dates = X.index
+    n_obs = len(X)
+    Xf = X.fillna(0.0)                 # 热路径 / leg 统一 NaN->0（停牌按 0 收益）
+
+    # ---- 起点：前 train_size 天作首个训练窗口（决策日 = 第 train_size 天
+    # 收盘，建仓 = 次一交易日），与 simulate_sl 无 folds 分支同一自然约定 ----
+    entry_pos = ts
+    if entry_pos >= n_obs:
+        raise ValueError(f"数据仅 {n_obs} 天，不足首个训练窗口（train_size={ts}）"
+                         f"+ 1 天建仓")
+    end_pos = n_obs - 1
+
+    vol_windows = sorted({c.window for c in conditions if c.metric == "rolling_std"})
+
+    epochs, daily_rows, trigger_rows = [], [], []
+    legs, refits = [], {}
+    prev_assets, prev_w = None, None
+    epoch_id = 0
+    net_global = 1.0
+
+    while entry_pos <= end_pos:
+        # reduce_test=False：不产出不完整尾段（WalkForward 同构语义）
+        if not reduce_test and entry_pos + max_hold - 1 > end_pos:
+            break
+        decision_pos = entry_pos - 1
+        assets, w = _fit_epoch_targets(X, decision_pos, params)    # 只 refit，不搜索
+        d_day = dates[decision_pos]
+        refits[d_day] = {"params": dict(params), "n_assets": len(assets),
+                         "assets": assets, "source": "fixed", "decision_day": d_day}
+        Xa = Xf[assets].to_numpy()
+
+        # ---- 逐日热路径（与 simulate_sl 同构，口径见模块 docstring）----
+        epoch_end_limit = min(entry_pos + max_hold - 1, end_pos)
+        rolls = {W: _RollingStd(W) for W in vol_windows}
+        # peak 从 0 起：入场首日净值即首个峰值观测（与 skfolio
+        # get_drawdowns 对净值取 cummax 的口径一致，不含 1.0 虚拟基线）
+        net, peak = 1.0, 0.0
+        hot_r, hot_dd, hot_net = [], [], []
+        exit_pos, trig = epoch_end_limit, None
+        exit_reason = "expired" if entry_pos + max_hold - 1 <= end_pos else "end_of_data"
+
+        for pos in range(entry_pos, epoch_end_limit + 1):
+            r = float(Xa[pos] @ w)
+            net *= (1.0 + r)
+            if net > peak:
+                peak = net
+            dd = net / peak - 1.0
+            cum = net - 1.0
+            net_global *= (1.0 + r)
+            day_in = pos - entry_pos + 1
+            vols = {}
+            for W, rs in rolls.items():
+                rs.push(r)
+                vols[W] = rs.std()
+
+            hits = [c for c in conditions
+                    if day_in >= min_epoch_days and c.check(dd=dd, cum=cum, vols=vols)]
+            hit = hits[0] if hits else None
+            row = {"date": dates[pos], "epoch": epoch_id, "day_in_epoch": day_in,
+                   "ret": r, "net_global": net_global, "net_epoch": net,
+                   "cum_epoch": cum, "dd_epoch": dd}
+            for W in vol_windows:
+                row[f"vol_{W}"] = vols.get(W)
+            for c in conditions:
+                row[f"hit_{c.name}"] = c in hits
+            row["trigger"] = hit.name if hit else ""
+            daily_rows.append(row)
+            hot_r.append(r)
+            hot_dd.append(dd)
+            hot_net.append(net)
+
+            if hit is not None:
+                exit_pos, trig, exit_reason = pos, hit, f"sl:{hit.name}"
+                trigger_rows.append(
+                    {"epoch": epoch_id, "date": dates[pos], "day_in_epoch": day_in,
+                     "condition": hit.name, "dd_epoch": dd, "cum_epoch": cum,
+                     **{f"vol_{W}": vols.get(W) for W in vol_windows}})
+                break
+
+        # ---- 冷路径：leg 构建 + 口径自检 ----
+        block = Xf.loc[dates[entry_pos]:dates[exit_pos], assets]
+        leg = Portfolio(X=block, weights=w, compounded=True, name=f"Ep{epoch_id}")
+        if verify:
+            _verify_epoch(leg, epoch_id, hot_r, hot_dd, hot_net, vol_windows)
+        legs.append(leg)
+
+        # 换手率（相邻 leg 权重 union 对齐，与 cpcv_analysis.turnover_series 同口径）
+        if prev_assets is not None:
+            common = np.union1d(prev_assets, assets)
+            w1 = np.zeros(len(common))
+            w1[np.isin(common, prev_assets)] = prev_w
+            w2 = np.zeros(len(common))
+            w2[np.isin(common, assets)] = w
+            turnover = float(0.5 * np.abs(w1 - w2).sum())
+        else:
+            turnover = float("nan")
+        prev_assets, prev_w = assets, w
+
+        p = dict(params)
+        fitness = str(p.pop("nondomin__fitness_measures", ""))
+        epoch_ret = float(np.asarray(leg.cumulative_returns, dtype=float)[-1] - 1.0)
+        epochs.append({"epoch": epoch_id, "decision_day": d_day,
+                       "entry": dates[entry_pos], "exit": dates[exit_pos],
+                       "n_days": exit_pos - entry_pos + 1, "exit_reason": exit_reason,
+                       "search_source": "fixed", "n_trials": 0,
+                       "is_score": np.nan, "p_luck": np.nan,
+                       "fit_ts": p.pop("train_size", None), "fitness": fitness,
+                       "n_assets": len(assets), **p,
+                       "epoch_cum_return": round(epoch_ret, 4),
+                       "epoch_max_drawdown": round(float(leg.max_drawdown), 4),
+                       "epoch_annualized_mean": round(float(leg.annualized_mean), 4),
+                       "epoch_annualized_sharpe": round(float(leg.annualized_sharpe_ratio), 4),
+                       "epoch_annualized_std": round(float(leg.annualized_standard_deviation), 4),
+                       "rebalance_turnover": round(turnover, 4) if np.isfinite(turnover) else np.nan})
+        if verbose:
+            print(f"Epoch {epoch_id}: {dates[entry_pos].date()} -> {dates[exit_pos].date()} "
+                  f"({exit_pos - entry_pos + 1}d, {exit_reason}) | fixed | "
+                  f"ASR={float(leg.annualized_sharpe_ratio):.3f} | 累计={epoch_ret:.2%}")
+
+        epoch_id += 1
+        entry_pos = exit_pos + 1
+
+    if not legs:
+        raise ValueError("无有效 epoch（reduce_test=False 时数据需至少 "
+                         f"train_size + max_hold = {ts + max_hold} 天，"
+                         f"当前 {n_obs} 天）")
+
+    daily = pd.DataFrame(daily_rows)
+    epochs_df = pd.DataFrame(epochs)
+    trig_cols = ["epoch", "date", "day_in_epoch", "condition", "dd_epoch",
+                 "cum_epoch"] + [f"vol_{W}" for W in vol_windows]
+    triggers_df = pd.DataFrame(trigger_rows, columns=trig_cols) if trigger_rows \
+        else pd.DataFrame(columns=trig_cols)
+    mpt = MultiPeriodPortfolio(legs, compounded=True)
+    return {"daily": daily, "epochs": epochs_df, "triggers": triggers_df,
+            "legs": legs, "mpt": mpt, "searches": refits, "warnings": [],
+            "conditions": [c.name for c in conditions], "bench": bench}
+
+
+# ---------------------------------------------------------------------------
+# WalkForward 原生对照实现：simulate_fixed 的独立对拍口径（无止损）
+# ---------------------------------------------------------------------------
+def simulate_wf(X, params, reduce_test=True, test_size=126, n_jobs=None,
+                verbose=True) -> dict:
+    """WalkForward + cross_val_predict 版固定参数滚动模拟（simulate_fixed 的独立对拍实现）。
+
+    与 simulate_fixed(conditions=[]) 语义同构——固定参数、每折结束只 refit
+    不搜索、无止损——但实现路径完全独立：切分交给 skfolio 原生
+    WalkForward(test_size, train_size=params["train_size"], purged_size=0,
+    reduce_test, expand_train=False)，逐折 fit/predict 交给 cross_val_predict
+    （clone + fit 训练段 + predict 测试段 + 拼接 MultiPeriodPortfolio）。
+    purged_size=0 时折位与 simulate_fixed 的 epoch 调度逐位同构：首折
+    train=X[0:ts] / test=X[ts:ts+test_size]，后续折整体滑动 test_size，
+    train 段与 test 段相邻（决策日 = train 段末日，建仓 = 次一交易日）；
+    reduce_test 尾段语义同构（True 缩短保留 / False 丢弃不完整尾段）。
+    用途：与 simulate_fixed 同输入对拍——同一数据、同一参数、同一 test_size
+    下两者应逐点 allclose；出现差异即模拟器或本函数存在 bug 的信号。
+
+    与 simulate_fixed 的已知口径差异（正常数据下不影响对拍结论）：
+    * NaN：simulate_fixed 热路径 NaN->0；skfolio Portfolio 对"非零权重资产
+      的 NaN"保留 NaN（仅零权重资产的 NaN 被忽略）。价格已 ffill 的数据
+      中 NaN 仅为上市前导、保留资产在 test 段无 NaN，两者应完全一致；
+      若现差异优先排查此项；
+    * 浮点求和顺序（1D@1D vs 1D@2D）可能带来末位差，对比用
+      np.testing.assert_allclose / np.allclose 判定，勿用严格相等。
+
+    Parameters
+    ----------
+    X : pd.DataFrame，与 WF+CPCV 同口径收益数据（DatetimeIndex 升序）
+    params : dict，一组完整 pipeline 参数（契约同 build_pipeline），含 train_size
+    reduce_test : bool，尾段语义（与 WalkForward.reduce_test 同构，语义同
+        simulate_fixed 同名参数）
+    test_size : int，折长（天）
+    n_jobs : int | None，cross_val_predict 折级并行度（None = 1，-1 = 全核）
+    verbose : bool，打印每折摘要
+
+    Returns
+    -------
+    dict :
+        mpt    : MultiPeriodPortfolio（compounded=True，官方指标可直接与
+                 simulate_fixed 的 mpt 对比）
+        legs   : list[Portfolio]（每折 cross_val_predict 输出，compounded=True）
+        daily  : DataFrame 逐日（date/epoch/day_in_epoch/ret/net_global，
+                 与 simulate_fixed["daily"] 的核心列同构，可直接逐点对拍）
+        epochs : DataFrame 一行一折（epoch/decision_day/entry/exit/n_days/
+                 exit_reason，exit_reason ∈ {expired, end_of_data}）
+        splits : list[(train_idx, test_idx)]（WalkForward 原始折位索引）
+
+    对拍示例::
+
+        fix = simulate_fixed(X, params, test_size=126, conditions=[], verbose=False)
+        wf  = simulate_wf(X, params, test_size=126, verbose=False)
+        np.testing.assert_allclose(fix["daily"]["ret"], wf["daily"]["ret"],
+                                   rtol=1e-9, atol=1e-12)
+        np.testing.assert_allclose(fix["daily"]["net_global"],
+                                   wf["daily"]["net_global"], rtol=1e-9, atol=1e-12)
+    """
+    params = dict(params)                        # 冻结副本（防调用方后续改动）
+    ts = int(params["train_size"])
+    test_size = int(test_size)
+    if test_size < 1:
+        raise ValueError(f"test_size 需 >= 1（当前 {test_size}）")
+
+    X = X.sort_index()
+    dates = X.index
+    n_obs = len(X)
+    if ts >= n_obs:
+        raise ValueError(f"数据仅 {n_obs} 天，不足首个训练窗口（train_size={ts}）"
+                         f"+ 1 天建仓")
+
+    # 折位与 simulate_fixed 的 epoch 调度同构：无 purge（决策日次一交易日建仓）、
+    # 固定窗（expand_train=False）、尾段语义同 reduce_test
+    cv = WalkForward(test_size=test_size, train_size=ts, purged_size=0,
+                     reduce_test=bool(reduce_test), expand_train=False)
+    splits = list(cv.split(X))
+    if not splits:
+        raise ValueError("无有效折（reduce_test=False 时数据需至少 train_size + "
+                         f"test_size = {ts + test_size} 天，当前 {n_obs} 天）")
+
+    model = build_pipeline(params)
+    # 每折 Portfolio 与 simulate_fixed 的 leg 同口径（几何累计/回撤）
+    model.set_params(optimization__portfolio_params=dict(compounded=True))
+    mpt = cross_val_predict(model, X, cv=cv, n_jobs=n_jobs,
+                            portfolio_params=dict(compounded=True))
+
+    legs = list(mpt.portfolios)
+    rows, epochs = [], []
+    net_global = 1.0
+    for k, ((tr_idx, te_idx), leg) in enumerate(zip(splits, legs)):
+        r = np.asarray(leg.returns, dtype=float)
+        if len(r) != len(te_idx):
+            raise RuntimeError(f"fold {k}: leg 收益长度 {len(r)} 与 test 段长度 "
+                               f"{len(te_idx)} 不一致（cross_val_predict 输出异常）")
+        entry, exit = dates[te_idx[0]], dates[te_idx[-1]]
+        exit_reason = "expired" if len(te_idx) == test_size else "end_of_data"
+        epochs.append({"epoch": k, "decision_day": dates[tr_idx[-1]],
+                       "entry": entry, "exit": exit, "n_days": len(te_idx),
+                       "exit_reason": exit_reason})
+        for i, pos in enumerate(te_idx):
+            net_global *= (1.0 + r[i])
+            rows.append({"date": dates[pos], "epoch": k, "day_in_epoch": i + 1,
+                         "ret": float(r[i]), "net_global": net_global})
+        if verbose:
+            ep_ret = float(np.asarray(leg.cumulative_returns, dtype=float)[-1] - 1.0)
+            print(f"Fold {k}: {entry.date()} -> {exit.date()} ({len(te_idx)}d, "
+                  f"{exit_reason}) | wf | "
+                  f"ASR={float(leg.annualized_sharpe_ratio):.3f} | 累计={ep_ret:.2%}")
+
+    return {"mpt": mpt, "legs": legs, "daily": pd.DataFrame(rows),
+            "epochs": pd.DataFrame(epochs), "splits": splits}
 
 
 # ---------------------------------------------------------------------------
