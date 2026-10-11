@@ -68,6 +68,8 @@ FITNESS_MEASURES = {
     "mean-variance-maxdd": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.MAX_DRAWDOWN],
     "mean-variance-avgdd": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN],
     "mean-variance-maxdd-kurt": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.MAX_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "mean-variance-maxdd-cvar": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.MAX_DRAWDOWN, RiskMeasure.CVAR],
+    "mean-variance-maxdd-cvar-kurt": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.MAX_DRAWDOWN, RiskMeasure.CVAR, ExtraRiskMeasure.KURTOSIS],
     "mean-variance-avgdd-kurt": [PerfMeasure.MEAN, RiskMeasure.VARIANCE, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
     "mean-semideviation-avgdd": [PerfMeasure.MEAN, RiskMeasure.SEMI_DEVIATION, RiskMeasure.AVERAGE_DRAWDOWN],
     "mean-mad": [PerfMeasure.MEAN, RiskMeasure.MEAN_ABSOLUTE_DEVIATION],
