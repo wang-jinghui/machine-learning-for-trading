@@ -4730,3 +4730,173 @@ cand435  0.1036  0.0903  1.1368 -0.1149  0.5402
 [2026-10-11 11:48:31] DSR
 ========================================================================
 {'dsr': 0.9595241145869741, 'z_score': 1.74519017539788, 'sr_obs': 0.0781532599198346, 'sr_star': 0.04247934759270875, 'margin': 0.03567391232712585, 'V': 0.0001261125649917552, 'N': 7290, 'T': 2520, 'skew': -0.525349613641299, 'kurt': 8.528305349967667, 'champion': 6612}
+
+========================================================================
+[2026-10-11 21:37:18] 
+========================================================================
+资产池: 2141 只 | 2848 天 | 2015-01-05 ~ 2026-09-18
+
+========================================================================
+[2026-10-11 21:37:47] Search Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 95, 'step': 10}, 'nondomin__threshold': {'low': -0.5, 'high': -0.5, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.9, 'step': 0.1}, 'extremes__k': {'low': 0.1, 'high': 0.9, 'step': 0.1}, 'nondomin__fitness_measures': ['sharpe-maxdd-kurt'], 'train_size': {'low': 252, 'high': 756, 'step': 252}}
+
+========================================================================
+[2026-10-11 22:47:59] CSCV PBO 诊断
+========================================================================
+==================================================================
+   CSCV PBO 诊断 v3（空间枚举 N 次执行 + 四种分析，论文 3.1-3.3）
+==================================================================
+  候选集：参数空间网格 N = 2430（6 维，无搜索层）
+    - nondomin__min_n_assets: 5~95 step 10
+    - nondomin__threshold: -0.5~-0.5 step 0.1
+    - correlate__threshold: 0.1~0.9 step 0.1
+    - extremes__k: 0.1~0.9 step 0.1
+    - nondomin__fitness_measures: choice x1
+    - train_size: 252~756 step 252
+  收益流：2430 参数 x 8 块 x 252 天 = 2016 天 | 公共起点第 756 天（冗余 max(train_size) = 756 天）
+  评估区：2018-02-06 00:00:00+08:00 ~ 2026-06-04 00:00:00+08:00
+  CSCV：S=20 块（每块 100 天）| 组合数 C(20,10) = 184756
+  ---------- 四种分析 ----------
+  [1] PBO = freq(lambda<=0) = 2.7%（4920/184756）| lambda 5/50/95 分位 = +0.75/+3.82/+5.71 | 冠军多样性 103/2430
+  [2] 性能退化：SR_OOS = +0.159 -0.715 x SR_IS（Spearman -0.607）| 可达 OOS 区间 P10/50/90 = +0.05/+0.08/+0.10
+  [3] 亏损概率：Prob[SR_OOS(IS 冠军) < 0] = 0.0%
+  [4] 随机占优：FSD = 否（CDF 最大反超 +0.0000）| SD2 min = +0.0000 -> 仅二阶占优（风险厌恶下优于随机选择）
+  解读：PBO 越接近 0 排名传递性越好（论文惯例阈值 5%）；≈50% 表示选择与随机无异；
+        亏损概率与 PBO 独立——PBO 低而亏损概率高说明 OOS 乏力且非过拟合所致；
+        斜率显著为负 + FSD/SD2 均不成立 = 过拟合的典型证据。
+==================================================================
+
+========================================================================
+[2026-10-11 22:48:45] topK 冠军候选样本外验收报告
+========================================================================
+[数据来源] 零重算 | 候选 N=2430 x 评估区 T=2016 天 | 对称组合 184756 个 | S=20
+[top10 定位(夺冠次数 | 参数)]
+  51199  {'nondomin__min_n_assets': 95, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 504}
+  33023  {'nondomin__min_n_assets': 95, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.2, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 504}
+  22831  {'nondomin__min_n_assets': 95, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 756}
+  16829  {'nondomin__min_n_assets': 85, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.8, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 252}
+  11810  {'nondomin__min_n_assets': 95, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 252}
+  5702  {'nondomin__min_n_assets': 95, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.6, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 252}
+  5615  {'nondomin__min_n_assets': 75, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.8, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 252}
+  5050  {'nondomin__min_n_assets': 75, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 756}
+  4853  {'nondomin__min_n_assets': 95, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.2, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 252}
+  3860  {'nondomin__min_n_assets': 85, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.6, 'nondomin__fitness_measures': 'sharpe-maxdd-kurt', 'train_size': 252}
+
+[评估区整体指标(2016 天,skfolio 口径)]
+           年化收益    年化波动  Sharpe    最大回撤     日胜率
+2212     0.0844  0.0526  1.6026  0.0681  0.5754
+2239     0.0714  0.0467  1.5287  0.0639  0.5600
+2213     0.0746  0.0491  1.5178  0.0477  0.5491
+1965     0.0836  0.0580  1.4419  0.0868  0.5675
+2211     0.0867  0.0593  1.4618  0.0870  0.5714
+2202     0.1049  0.0789  1.3293  0.1568  0.5620
+1722     0.0769  0.0565  1.3622  0.0885  0.5680
+1727     0.0734  0.0574  1.2787  0.0857  0.5580
+2238     0.0671  0.0492  1.3643  0.0738  0.5630
+1959     0.0971  0.0741  1.3098  0.0985  0.5689
+全体-中位    0.0596  0.1039  0.5593  0.2264  0.5208
+全体-95分位  0.0899  0.1488  1.0185  0.3690  0.5461
+
+[当选组合口径 | Sharpe 为日频未年化;OOS 分位 = omega 排名分位(越高越靠前)]
+  cand2212: 当选 51199 次( 27.7%) | IS-Sharpe 中位  +0.12 | OOS-Sharpe 中位  +0.09 | OOS 分位中位 99.1% | 掉后半占比  0.0%
+  cand2239: 当选 33023 次( 17.9%) | IS-Sharpe 中位  +0.13 | OOS-Sharpe 中位  +0.07 | OOS 分位中位 98.7% | 掉后半占比  0.0%
+  cand2213: 当选 22831 次( 12.4%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.09 | OOS 分位中位 98.6% | 掉后半占比  0.0%
+  cand1965: 当选 16829 次(  9.1%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.08 | OOS 分位中位 95.5% | 掉后半占比  1.5%
+  cand2211: 当选 11810 次(  6.4%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.08 | OOS 分位中位 96.6% | 掉后半占比  0.4%
+  cand2202: 当选  5702 次(  3.1%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.07 | OOS 分位中位 93.5% | 掉后半占比  2.3%
+  cand1722: 当选  5615 次(  3.0%) | IS-Sharpe 中位  +0.12 | OOS-Sharpe 中位  +0.06 | OOS 分位中位 87.9% | 掉后半占比  7.9%
+  cand1727: 当选  5050 次(  2.7%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.06 | OOS 分位中位 84.9% | 掉后半占比  8.8%
+  cand2238: 当选  4853 次(  2.6%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.06 | OOS 分位中位 94.4% | 掉后半占比  0.0%
+  cand1959: 当选  3860 次(  2.1%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.06 | OOS 分位中位 86.9% | 掉后半占比  9.0%
+  汇总: top10 合计份额 87.0% | top10 加权贡献 lambda<=0 频率 0.9% | 全组合 PBO 2.7%
+
+========================================================================
+[2026-10-11 22:50:03] DSR
+========================================================================
+{'dsr': 0.9866079023724255, 'z_score': 2.2146485733845727, 'sr_obs': 0.10095154967080675, 'sr_star': 0.05101476460021814, 'margin': 0.0499367850705886, 'V': 0.00021249686866734764, 'N': 2430, 'T': 2016, 'skew': -0.09670932180100256, 'kurt': 6.779218364888039, 'champion': 2212}
+
+========================================================================
+[2026-10-11 23:14:05] 
+========================================================================
+资产池: 2141 只 | 2848 天 | 2015-01-05 ~ 2026-09-18
+
+========================================================================
+[2026-10-11 23:14:32] Search Space
+========================================================================
+{'nondomin__min_n_assets': {'low': 5, 'high': 95, 'step': 10}, 'nondomin__threshold': {'low': -0.5, 'high': -0.5, 'step': 0.1}, 'correlate__threshold': {'low': 0.1, 'high': 0.9, 'step': 0.1}, 'extremes__k': {'low': 0.1, 'high': 0.9, 'step': 0.1}, 'nondomin__fitness_measures': ['sharpe-avgdd-kurt'], 'train_size': {'low': 252, 'high': 756, 'step': 252}}
+
+========================================================================
+[2026-10-12 00:55:01] CSCV PBO 诊断
+========================================================================
+==================================================================
+   CSCV PBO 诊断 v3（空间枚举 N 次执行 + 四种分析，论文 3.1-3.3）
+==================================================================
+  候选集：参数空间网格 N = 2430（6 维，无搜索层）
+    - nondomin__min_n_assets: 5~95 step 10
+    - nondomin__threshold: -0.5~-0.5 step 0.1
+    - correlate__threshold: 0.1~0.9 step 0.1
+    - extremes__k: 0.1~0.9 step 0.1
+    - nondomin__fitness_measures: choice x1
+    - train_size: 252~756 step 252
+  收益流：2430 参数 x 8 块 x 252 天 = 2016 天 | 公共起点第 756 天（冗余 max(train_size) = 756 天）
+  评估区：2018-02-06 00:00:00+08:00 ~ 2026-06-04 00:00:00+08:00
+  CSCV：S=20 块（每块 100 天）| 组合数 C(20,10) = 184756
+  ---------- 四种分析 ----------
+  [1] PBO = freq(lambda<=0) = 6.4%（11887/184756）| lambda 5/50/95 分位 = -0.34/+4.02/+7.80 | 冠军多样性 137/2430
+  [2] 性能退化：SR_OOS = +0.151 -0.646 x SR_IS（Spearman -0.346）| 可达 OOS 区间 P10/50/90 = +0.04/+0.08/+0.11
+  [3] 亏损概率：Prob[SR_OOS(IS 冠军) < 0] = 0.4%
+  [4] 随机占优：FSD = 否（CDF 最大反超 +0.0000）| SD2 min = +0.0000 -> 仅二阶占优（风险厌恶下优于随机选择）
+  解读：PBO 越接近 0 排名传递性越好（论文惯例阈值 5%）；≈50% 表示选择与随机无异；
+        亏损概率与 PBO 独立——PBO 低而亏损概率高说明 OOS 乏力且非过拟合所致；
+        斜率显著为负 + FSD/SD2 均不成立 = 过拟合的典型证据。
+==================================================================
+
+========================================================================
+[2026-10-12 00:55:38] topK 冠军候选样本外验收报告
+========================================================================
+[数据来源] 零重算 | 候选 N=2430 x 评估区 T=2016 天 | 对称组合 184756 个 | S=20
+[top10 定位(夺冠次数 | 参数)]
+  67979  {'nondomin__min_n_assets': 95, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 756}
+  27194  {'nondomin__min_n_assets': 85, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 756}
+  13703  {'nondomin__min_n_assets': 45, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.7, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 252}
+  12001  {'nondomin__min_n_assets': 85, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 504}
+  5870  {'nondomin__min_n_assets': 15, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.4, 'extremes__k': 0.6, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 504}
+  5326  {'nondomin__min_n_assets': 65, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.7, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 252}
+  4988  {'nondomin__min_n_assets': 95, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.2, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 756}
+  4861  {'nondomin__min_n_assets': 55, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.7, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 252}
+  4095  {'nondomin__min_n_assets': 75, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.9, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 756}
+  3198  {'nondomin__min_n_assets': 75, 'nondomin__threshold': -0.5, 'correlate__threshold': 0.1, 'extremes__k': 0.4, 'nondomin__fitness_measures': 'sharpe-avgdd-kurt', 'train_size': 252}
+
+[评估区整体指标(2016 天,skfolio 口径)]
+           年化收益    年化波动  Sharpe    最大回撤     日胜率
+2213     0.0845  0.0500  1.6888  0.0595  0.5635
+1970     0.0849  0.0504  1.6846  0.0595  0.5645
+990      0.0859  0.0628  1.3661  0.0825  0.5521
+1969     0.0931  0.0707  1.3182  0.1120  0.5590
+340      0.1064  0.0847  1.2569  0.1152  0.5382
+1476     0.0881  0.0653  1.3490  0.0998  0.5486
+2240     0.0701  0.0499  1.4054  0.0921  0.5521
+1233     0.0853  0.0651  1.3104  0.0889  0.5461
+1727     0.0652  0.0459  1.4201  0.0605  0.5620
+1710     0.0726  0.0778  0.9340  0.0844  0.5367
+全体-中位    0.0585  0.1066  0.5416  0.2380  0.5208
+全体-95分位  0.0880  0.1488  0.9870  0.3700  0.5437
+
+[当选组合口径 | Sharpe 为日频未年化;OOS 分位 = omega 排名分位(越高越靠前)]
+  cand2213: 当选 67979 次( 36.8%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.10 | OOS 分位中位 99.8% | 掉后半占比  0.0%
+  cand1970: 当选 27194 次( 14.7%) | IS-Sharpe 中位  +0.12 | OOS-Sharpe 中位  +0.10 | OOS 分位中位 99.8% | 掉后半占比  0.0%
+  cand 990: 当选 13703 次(  7.4%) | IS-Sharpe 中位  +0.10 | OOS-Sharpe 中位  +0.07 | OOS 分位中位 94.5% | 掉后半占比  3.3%
+  cand1969: 当选 12001 次(  6.5%) | IS-Sharpe 中位  +0.12 | OOS-Sharpe 中位  +0.06 | OOS 分位中位 93.3% | 掉后半占比  3.8%
+  cand 340: 当选  5870 次(  3.2%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.05 | OOS 分位中位 85.0% | 掉后半占比 13.4%
+  cand1476: 当选  5326 次(  2.9%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.06 | OOS 分位中位 93.8% | 掉后半占比  2.4%
+  cand2240: 当选  4988 次(  2.7%) | IS-Sharpe 中位  +0.12 | OOS-Sharpe 中位  +0.06 | OOS 分位中位 96.9% | 掉后半占比  0.0%
+  cand1233: 当选  4861 次(  2.6%) | IS-Sharpe 中位  +0.11 | OOS-Sharpe 中位  +0.06 | OOS 分位中位 86.3% | 掉后半占比 14.9%
+  cand1727: 当选  4095 次(  2.2%) | IS-Sharpe 中位  +0.12 | OOS-Sharpe 中位  +0.07 | OOS 分位中位 92.0% | 掉后半占比  3.7%
+  cand1710: 当选  3198 次(  1.7%) | IS-Sharpe 中位  +0.10 | OOS-Sharpe 中位  +0.03 | OOS 分位中位 16.0% | 掉后半占比 87.1%
+  汇总: top10 合计份额 80.8% | top10 加权贡献 lambda<=0 频率 3.0% | 全组合 PBO 6.4%
+
+========================================================================
+[2026-10-12 00:57:15] DSR
+========================================================================
+{'dsr': 0.99484184394274, 'z_score': 2.5650426575658583, 'sr_obs': 0.10638664542570522, 'sr_star': 0.0491096774125085, 'margin': 0.057276968013196726, 'V': 0.00019692231083313932, 'N': 2430, 'T': 2016, 'skew': 0.14911065431889817, 'kurt': 8.275192065041432, 'champion': 2213}
