@@ -27,7 +27,8 @@ v1/v2 保持不动（历史口径留档）。本模块复用 cpcv_search_base.bu
 
 用法
 ----
-    from cscv_pbo_v3 import build_topk_report, cscv_pbo, plot_cscv, plot_topk
+    from cscv_pbo_v3 import (build_topk_report, cscv_pbo, plot_cscv, plot_dsr,
+                             plot_topk, plot_topk_radar)
     out = cscv_pbo(X, space=search_space, block_size=252, S=16)
     print(out["report"])                    # 四种分析报告（文本）
     out["pbo"]; out["loss_prob"]; out["degradation"]["slope"]
@@ -36,6 +37,8 @@ v1/v2 保持不动（历史口径留档）。本模块复用 cpcv_search_base.bu
     plot_dsr(out)                           # DSR 判定三联图（[5a]-[5c]）
     print(build_topk_report(out, k=5))      # topK 冠军候选验收（文本,零重算）
     plot_topk(out, k=5)                     # topK 评估区累计净值（黑虚线=全员截面中位）
+    plot_topk_radar(out, k=5)               # topK 五维指标雷达+原始指标表
+                                            # （Mean/Variance/MaxDD/CVaR/Kurt）
     out_mdd = cscv_pbo(X, space=search_space, block_size=252, S=16,
                        measure="MAX_DRAWDOWN")  # 切换评价度量（skfolio 口径）
 
@@ -112,6 +115,7 @@ __all__ = [
     "plot_cscv",
     "plot_dsr",
     "plot_topk",
+    "plot_topk_radar",
     "load_space",
 ]
 
@@ -1251,6 +1255,145 @@ def plot_topk(res, k=3, figsize=(10, 4), save_path=None):
     ax.axhline(1.0, color="gray", linewidth=0.8)
     ax.set_title(f"top{len(top_idx)} 候选：评估区累计净值"
                  f"（黑虚线 = 全员截面中位参照）")
+    if save_path:
+        fig.savefig(save_path, bbox_inches="tight")
+    display(fig)
+    plt.close(fig)
+    #return fig
+
+
+def plot_topk_radar(res, k=5, figsize=(10.5, 5.4), save_path=None):
+    """topK 候选五维指标雷达图 + 原始指标表（零重算，直接消费 cscv_pbo 结果）。
+
+    对夺冠（IS 冠军）次数最多的前 K 个候选，在评估区收益流上计算五项指标
+    （与 FITNESS_MEASURES 中 'mean-variance-maxdd-cvar-kurt' 同家族）：
+
+    * Mean     年化收益 = 均值 x 252；
+    * Variance 年化方差 = 样本方差(ddof=1) x 252；
+    * MaxDD    净值比价最大回撤（compounded=True，正号幅值，越大越深）；
+    * CVaR     95% 置信尾部日均损失幅值（正号，越大越重）；
+    * Kurt     总体（biased）峰度，越大尾部越厚。
+
+    计算口径与 build_topk_report 的 Portfolio 单列完全一致（同一 skfolio.
+    measures 函数族，向量化一次算完全体候选，已对拍 max|diff| ~1e-15）。
+
+    雷达半径 = 各指标对“全体 N 候选”的方向归一排名百分位——Mean 越大越优、
+    其余四项越小越优，外圈恒为更优；灰虚线环 0.5 = 全员中位。右侧面板给出
+    topK 原始指标表（末行 = 全员中位），避免只看形状不知绝对水平。
+
+    topK 口径与 build_topk_report / plot_topk 一致（夺冠次数降序、并列按
+    编号升序；实际数量 = min(k, 夺冠候选数)；k 建议 <= 10 保证可读）。
+    save_path 给定时落盘；展示后关闭，不返回 Figure（notebook 防双渲染惯例）。
+    """
+    import matplotlib.pyplot as plt
+    from IPython.display import display
+    from skfolio.measures import (cvar, get_drawdowns, kurtosis, max_drawdown,
+                                  mean, variance)
+
+    M = res["matrix"]
+    top_idx = _topk_indices(res, k)
+    k = len(top_idx)                        # 实际数量（与文本报告同口径）
+    ns = np.asarray(res["n_star"])
+    vc = pd.Series(ns).value_counts()
+
+    # ---- 五项指标：全体候选一次向量化（退化列 NaN/告警已在槽内抑制）----
+    X = M.to_numpy(dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pool = pd.DataFrame({
+            "Mean": mean(X) * 252.0,                        # 年化收益
+            "Variance": variance(X) * 252.0,                # 年化方差
+            "MaxDD": max_drawdown(get_drawdowns(X, compounded=True)),
+            "CVaR": cvar(X, beta=0.95),                     # 尾部损失幅值
+            "Kurt": kurtosis(X),                            # 总体峰度
+        }, index=M.columns)
+
+    # ---- 方向归一：rank 百分位（外圈恒为更优；非有限值记 0 = 圆心）----
+    higher = {"Mean": True, "Variance": False, "MaxDD": False,
+              "CVaR": False, "Kurt": False}
+    cols = list(pool.columns)
+    score = pd.DataFrame({c: (pool[c] if higher[c] else -pool[c]).rank(pct=True)
+                          for c in cols})
+    score = score.where(np.isfinite(pool)).fillna(0.0)
+
+    # ---- 右侧原始指标表（topK + 全员中位行）----
+    def _fmt(c, v):
+        if not np.isfinite(v):
+            return "—"
+        if c == "Mean":
+            return f"{v:+.2%}"
+        if c in ("MaxDD", "CVaR"):
+            return f"{v:.2%}"
+        if c == "Variance":
+            return f"{v:.4f}"
+        return f"{v:.2f}"                                   # Kurt
+
+    med = pool[cols].median()
+    cells = [[str(int(vc[i]))] + [_fmt(c, pool.at[i, c]) for c in cols]
+             for i in top_idx]
+    cells.append(["—"] + [_fmt(c, med[c]) for c in cols])
+    row_labels = [f"cand{i}" for i in top_idx] + ["全员中位"]
+
+    # ---- 画布：左雷达 + 右表 ----
+    zh = {"Mean": "年化收益", "Variance": "年化方差", "MaxDD": "最大回撤",
+          "CVaR": "尾部损失", "Kurt": "峰度"}
+    fig = plt.figure(figsize=figsize)
+    gs = fig.add_gridspec(1, 2, width_ratios=(1.25, 1.0), wspace=0.02)
+    ax = fig.add_subplot(gs[0, 0], polar=True)
+    ax_t = fig.add_subplot(gs[0, 1])
+    ax_t.axis("off")
+
+    angles = np.linspace(0.0, 2.0 * np.pi, len(cols), endpoint=False)
+    closed = np.concatenate([angles, angles[:1]])
+    cmap = plt.get_cmap("tab10")
+    for t, i in enumerate(top_idx):
+        color = cmap(t % 10)
+        vals = score.loc[i, cols].to_numpy(dtype=float)
+        loop = np.concatenate([vals, vals[:1]])
+        ax.plot(closed, loop, color=color, linewidth=1.5, marker="o",
+                markersize=3.0, label=f"cand{i}（夺冠 {int(vc[i])} 次）")
+        ax.fill(closed, loop, color=color, alpha=0.08)
+    ax.plot(closed, np.full(closed.shape, 0.5), color="gray", linestyle="--",
+            linewidth=1.0, label="全员中位（0.5）")
+
+    ax.set_xticks(angles)
+    ax.set_xticklabels([f"{c}\n{zh[c]}{' ↑' if higher[c] else ' ↓'}"
+                        for c in cols], fontsize=10)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_yticks([0.25, 0.5, 0.75, 1.0])
+    ax.set_yticklabels(["25%", "50%", "75%", "100%"], fontsize=7,
+                       color="gray")
+    ax.set_rlabel_position(324.0)
+    ax.grid(color="gray", alpha=0.35)
+    ax.set_title(f"top{k} 候选五维雷达（N={M.shape[1]}，"
+                 f"半径=方向归一百分位）", fontsize=11)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08),
+              ncol=min(k, 4), fontsize=8, frameon=False)
+
+    tbl = ax_t.table(
+        cellText=cells, rowLabels=row_labels,
+        colLabels=["夺冠次数", "年化收益", "年化方差", "最大回撤",
+                   "CVaR 尾部损失", "峰度"],
+        loc="upper center", cellLoc="right")
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(8)
+    ax_t.set_title(f"top{k} 原始指标（评估区 {len(M)} 天，skfolio 口径）",
+                   fontsize=11)
+    for (r, c), cell in tbl.get_celld().items():
+        cell.set_linewidth(0.4)
+        if c == -1 and 1 <= r <= k:
+            cell.get_text().set_color(cmap((r - 1) % 10))   # 与雷达同色
+        elif c == -1 and r == k + 1:
+            cell.get_text().set_color("gray")
+    ax_t.text(0.0, 0.01,
+              "口径：年化收益 = 均值x252；年化方差 = 样本方差(ddof=1)x252；"
+              "最大回撤 = 净值比价幅值（正号，越大越深）；\n"
+              "CVaR = 最差 5% 日收益的均值损失（正号幅值，越大越重）；"
+              "峰度 = 总体峰度（越大尾部越厚）。\n"
+              "雷达半径：各指标按全体候选排名百分位（已方向归一，外圈 = 更优）；"
+              "灰虚线环 0.5 = 全员中位。",
+              transform=ax_t.transAxes, va="bottom", ha="left", fontsize=7.5,
+              color="#444444")
+
     if save_path:
         fig.savefig(save_path, bbox_inches="tight")
     display(fig)
