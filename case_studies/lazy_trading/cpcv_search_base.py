@@ -146,6 +146,8 @@ FITNESS_MEASURES = {
     "calmar-cvar": [RatioMeasure.CALMAR_RATIO, RiskMeasure.CVAR],
     "calmar-variance": [RatioMeasure.CALMAR_RATIO, RiskMeasure.VARIANCE],
     "calmar-semivariance": [RatioMeasure.CALMAR_RATIO, RiskMeasure.SEMI_VARIANCE],
+    "calmar-maxdd-kurt": [RatioMeasure.CALMAR_RATIO, RiskMeasure.MAX_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "calmar-avgdd-kurt": [RatioMeasure.CALMAR_RATIO, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
     "sharpe-cvar": [RatioMeasure.SHARPE_RATIO, RiskMeasure.CVAR],
     "sharpe-maxdd": [RatioMeasure.SHARPE_RATIO, RiskMeasure.MAX_DRAWDOWN],
     "sharpe-maxdd-kurt": [RatioMeasure.SHARPE_RATIO, RiskMeasure.MAX_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
@@ -154,6 +156,8 @@ FITNESS_MEASURES = {
     "sortino-cvar": [RatioMeasure.SORTINO_RATIO, RiskMeasure.CVAR],
     "sortino-variance": [RatioMeasure.SORTINO_RATIO, RiskMeasure.VARIANCE],
     "sortino-semivariance": [RatioMeasure.SORTINO_RATIO, RiskMeasure.SEMI_VARIANCE],
+    "sortino-maxdd-kurt": [RatioMeasure.SORTINO_RATIO, RiskMeasure.MAX_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
+    "sortino-avgdd-kurt": [RatioMeasure.SORTINO_RATIO, RiskMeasure.AVERAGE_DRAWDOWN, ExtraRiskMeasure.KURTOSIS],
 }
 
 
