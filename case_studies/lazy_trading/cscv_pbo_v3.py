@@ -27,8 +27,8 @@ v1/v2 保持不动（历史口径留档）。本模块复用 cpcv_search_base.bu
 
 用法
 ----
-    from cscv_pbo_v3 import (build_topk_report, cscv_pbo, plot_cscv, plot_dsr,
-                             plot_topk, plot_topk_radar)
+    from cscv_pbo_v3 import (build_strata_report, build_topk_report, cscv_pbo,
+                             plot_cscv, plot_dsr, plot_topk, plot_topk_radar)
     out = cscv_pbo(X, space=search_space, block_size=252, S=16)
     print(out["report"])                    # 四种分析报告（文本）
     out["pbo"]; out["loss_prob"]; out["degradation"]["slope"]
@@ -36,6 +36,7 @@ v1/v2 保持不动（历史口径留档）。本模块复用 cpcv_search_base.bu
     plot_cscv(out)                          # 四种分析图（各一张独立画布）
     plot_dsr(out)                           # DSR 判定三联图（[5a]-[5c]）
     print(build_topk_report(out, k=5))      # topK 冠军候选验收（文本,零重算）
+    tabs = build_strata_report(out)         # 按 space 各维度分层统计（dict，零重算）
     plot_topk(out, k=5)                     # topK 评估区累计净值（黑虚线=全员截面中位）
     plot_topk_radar(out, k=5)               # topK 五维指标雷达+原始指标表
                                             # （Mean/Variance/MaxDD/CVaR/Kurt）
@@ -112,6 +113,7 @@ __all__ = [
     "expand_range",
     "build_report",
     "build_topk_report",
+    "build_strata_report",
     "plot_cscv",
     "plot_dsr",
     "plot_topk",
@@ -966,6 +968,114 @@ def build_topk_report(res, k=3) -> str:
         f"top{k} 加权贡献 lambda<=0 频率 {np.sum(w * cond):.1%} | "
         f"全组合 PBO {(om <= 0.5).mean():.1%}")
     return "\n".join(lines)
+
+
+def build_strata_report(res, keys=None, *, exclude_champions=None,
+                        verbose=True):
+    """按空间维度分层统计（零重算，直接消费 cscv_pbo 结果）。
+
+    对候选集按指定参数维度分组，双口径对照输出：
+
+    * 候选级：组内候选数、夺冠（IS 冠军）总次数与全空间份额、评估区画像
+      中位（年化收益 = 均值x252、年化方差 = ddof=1 样本方差x252、MaxDD =
+      compounded 净值比价幅值、峰度、Sharpe、Calmar——与 plot_topk_radar
+      同口径的全体向量化计算）；
+    * 组合级：按对称组合的冠军归属分组——该组夺冠组合的"掉后半频率"
+      （PBO = freq(lambda<=0) 的分组贡献口径）与夺冠组合 OOS 度量中位
+      （默认 Sharpe，随 measure 切换）。
+
+    用途：检验 topK 榜单个案画像能否外推到参数子族（按 train_size、
+    extremes__k 或交叉分层），以及 leave-one-champion-out 敏感性
+    （exclude_champions 剔除指定冠军后复算组合级两列）。
+
+    Parameters
+    ----------
+    res : dict
+        cscv_pbo 返回结果（消费 candidates / n_star / lambdas /
+        sel_sharpe_oos / matrix / space）。
+    keys : str or list, optional
+        分层维度（space 键名）：str 为单维分层；list 为交叉分层（多级
+        索引）；None -> 对全部 space 维度逐一输出单维分层。
+    exclude_champions : sequence, optional
+        剔除的冠军编号（如 [20463]）：组合级指标在剔除这些冠军参与的
+        组合后复算，追加 "(剔除)" 后缀列；None 不追加。
+    verbose : bool
+        打印开关（每张表前打印维度标签）。
+
+    Returns
+    -------
+    dict[str, DataFrame]
+        键为维度标签（交叉用 " x " 连接），值为该维度汇总表。
+    """
+    from skfolio.measures import (get_drawdowns, kurtosis, max_drawdown,
+                                  mean, variance)
+
+    M = res["matrix"]
+    cand = pd.DataFrame(res["candidates"])
+    cand.index = M.columns                     # 候选索引 = 列标签（显式对齐）
+
+    # ---- 候选级指标：全体一次向量化（与 plot_topk_radar 同口径）----
+    X = M.to_numpy(dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        met = pd.DataFrame({
+            "ann_ret": mean(X) * 252.0,
+            "ann_var": variance(X) * 252.0,
+            "mdd": max_drawdown(get_drawdowns(X, compounded=True)),
+            "kurt": kurtosis(X),
+        }, index=M.columns)
+    met["sharpe"] = met["ann_ret"] / np.sqrt(
+        met["ann_var"].clip(lower=1e-18))
+    met["calmar"] = met["ann_ret"] / met["mdd"].clip(lower=1e-18)
+
+    # ---- 夺冠次数 + 组合级表 ----
+    ns = np.asarray(res["n_star"])
+    vc = pd.Series(ns).value_counts()
+    cand["win"] = vc.reindex(cand.index).fillna(0).astype(int)
+
+    comb = pd.DataFrame({"lam": np.asarray(res["lambdas"], dtype=float),
+                         "oos": np.asarray(res["sel_sharpe_oos"], dtype=float),
+                         "champ": ns})
+    comb["pbo_event"] = comb["lam"] <= 0       # 该组合的 PBO 事件
+    keep = (None if exclude_champions is None
+            else ~comb["champ"].isin(list(exclude_champions)))
+
+    specs = [keys] if keys is not None else list(res["space"].keys())
+    tag, _, is_default = _crit_info(res)
+    crit = "Sharpe" if is_default else tag
+
+    full = pd.concat([met, cand], axis=1)
+    out = {}
+    for spec in specs:
+        kk = [spec] if isinstance(spec, str) else list(spec)
+        for k in kk:                           # 组合级缺的映射自动补
+            if k not in comb.columns:
+                comb[k] = comb["champ"].map(cand[k])
+        g, g2 = full.groupby(spec), comb.groupby(spec)
+        tab = pd.DataFrame({
+            "候选数": g.size(),
+            "夺冠总次数": g["win"].sum(),
+            "夺冠份额": g["win"].sum() / cand["win"].sum(),
+            "年化中位": g["ann_ret"].median(),
+            "年化方差中位": g["ann_var"].median(),
+            "MDD中位": g["mdd"].median(),
+            "峰度中位": g["kurt"].median(),
+            "Sharpe中位": g["sharpe"].median(),
+            "Calmar中位": g["calmar"].median(),
+            "夺冠组合PBO频率": g2["pbo_event"].mean(),
+            f"夺冠组合{crit}中位": g2["oos"].median(),
+        })
+        if keep is not None:
+            g3 = comb[keep].groupby(spec)
+            tab["夺冠组合PBO频率(剔除)"] = g3["pbo_event"].mean()
+            tab[f"夺冠组合{crit}中位(剔除)"] = g3["oos"].median()
+        tab = tab.round(4)
+        label = " x ".join(kk)
+        out[label] = tab
+        if verbose:
+            print(f"—— 分层：{label} ——")
+            print(tab.to_string())
+            print()
+    return out
 
 
 def plot_cscv(result, bins=60, figsize=(9, 4.6), dom_figsize=(14, 4.2),
