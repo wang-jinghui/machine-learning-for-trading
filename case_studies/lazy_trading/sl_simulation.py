@@ -16,13 +16,13 @@
   参数与审计（无止损事件的模拟即"预计算参数的重放"）；否则现场 CPCV
   重搜并写入运行内缓存（同决策日重复求解直接命中）。
 
-口径（热路径 O(1)/天，不构建对象；与 skfolio 0.20.x 实测逐点一致）：
+口径（热路径 O(1)/天，不构建对象；与 skfolio 1.x 实测逐点一致）：
 * 净值     net_t = net_{t-1} * (1 + r_t)，r_t = 当日收益行 x 冻结权重
            （NaN->0：停牌 / 缺数按 0 收益处理）；
-* 回撤     dd_t = net_t / cummax(net_{0..t}) - 1（峰值 = epoch 内净值的运行
-           最大，入场首日即首个峰值观测、**不含 1.0 虚拟基线**——与
-           compounded=True 的 Portfolio.drawdowns 逐点一致；入场后
-           先跌再回升但未破 1.0 期间 dd=0，该场景由 cum_return 条件覆盖）；
+* 回撤     dd_t = net_t / max(1.0, cummax(net_{0..t})) - 1（峰值 = 初始净值
+           1.0 与 epoch 内净值运行最大——与 skfolio 1.x compounded=True 的
+           Portfolio.drawdowns 逐点一致；起始峰值为初始财富，故入场首日
+           下跌即计为回撤）；
 * 滚动波动 窗口内日收益样本 std（ddof=1，非年化；与 rolling_measure(
            STANDARD_DEVIATION, W) 一致；条件 annualize 选项按 x sqrt(252)）。
 冷路径（每个 epoch 结束一次）：构建该 epoch 的 Portfolio(block, weights,
@@ -86,7 +86,7 @@ DEFAULT_CONFIG = BASE_DIR / "sl_simulation_config.toml"
 DEFAULT_NESTED_CONFIG = BASE_DIR / "cpcv_parameter_search_config.toml"
 
 MIN_TRAIN_DAYS = 252      # 决策日重搜的最短训练窗口（与嵌套搜索 X_tr<252 跳过同口径）
-ANNUAL_FACTOR = 252       # 年化因子（Portfolio 默认 annualized_factor，滚动波动年化用）
+ANNUAL_FACTOR = 252       # 年化因子（Portfolio 参数 annualization_factor，滚动波动年化用）
 
 # search_inner_params 接受的键（从 load_nested_config 的 search_kwargs 过滤）
 _SEARCH_KEYS = ("n_test_folds", "inner_purged_size", "inner_embargo_size",
@@ -125,8 +125,9 @@ def load_sl_config(config_path=DEFAULT_CONFIG,
 class StopLossCondition:
     """单条止损条件（配置驱动，可插拔）。
 
-    metric : "drawdown"（入场以来净值运行最大回撤，负值；入场首日
-        dd=0，与 skfolio Portfolio.drawdowns 同口径）/ "cum_return"
+    metric : "drawdown"（入场以来净值运行最大回撤，负值；峰值含初始净值
+        1.0，入场首日下跌即计回撤，与 skfolio 1.x Portfolio.drawdowns
+        同口径）/ "cum_return"
         （epoch 累计收益）/ "rolling_std"（epoch 内 W 日滚动日波动，条件自持窗口）。
     op : "<=" | ">="（如 drawdown <= -0.10 触发、rolling_std >= 阈值触发）。
     annualize : 仅 rolling_std 生效——按 x sqrt(252) 年化后与阈值比较。
@@ -419,9 +420,9 @@ def simulate_sl(X, folds=None, cfg=None, conditions=None, start_date=None,
         # ---- 逐日热路径 ----
         epoch_end_limit = min(entry_pos + max_hold - 1, end_pos)
         rolls = {W: _RollingStd(W) for W in vol_windows}
-        # peak 从 0 起：入场首日净值即首个峰值观测（与 skfolio
-        # get_drawdowns 对净值取 cummax 的口径一致，不含 1.0 虚拟基线）
-        net, peak = 1.0, 0.0
+        # peak 从初始净值 1.0 起：首日亏损即计回撤（与 skfolio 1.x
+        # get_drawdowns 的起始峰值口径一致）
+        net, peak = 1.0, 1.0
         hot_r, hot_dd, hot_net = [], [], []
         exit_pos, trig = epoch_end_limit, None
         exit_reason = "expired" if entry_pos + max_hold - 1 <= end_pos else "end_of_data"
@@ -614,9 +615,9 @@ def simulate_fixed(X, params, reduce_test=True, test_size=126, conditions=None,
         # ---- 逐日热路径（与 simulate_sl 同构，口径见模块 docstring）----
         epoch_end_limit = min(entry_pos + max_hold - 1, end_pos)
         rolls = {W: _RollingStd(W) for W in vol_windows}
-        # peak 从 0 起：入场首日净值即首个峰值观测（与 skfolio
-        # get_drawdowns 对净值取 cummax 的口径一致，不含 1.0 虚拟基线）
-        net, peak = 1.0, 0.0
+        # peak 从初始净值 1.0 起：首日亏损即计回撤（与 skfolio 1.x
+        # get_drawdowns 的起始峰值口径一致）
+        net, peak = 1.0, 1.0
         hot_r, hot_dd, hot_net = [], [], []
         exit_pos, trig = epoch_end_limit, None
         exit_reason = "expired" if entry_pos + max_hold - 1 <= end_pos else "end_of_data"
@@ -723,7 +724,8 @@ def simulate_fixed(X, params, reduce_test=True, test_size=126, conditions=None,
 # WalkForward 原生对照实现：simulate_fixed 的独立对拍口径（无止损）
 # ---------------------------------------------------------------------------
 def simulate_wf(X, params, reduce_test=True, test_size=126, n_jobs=None,
-                verbose=True) -> dict:
+                verbose=True, portfolio_params=None,
+                entry_rebalancing_params=None) -> dict:
     """WalkForward + cross_val_predict 版固定参数滚动模拟（simulate_fixed 的独立对拍实现）。
 
     与 simulate_fixed(conditions=[]) 语义同构——固定参数、每折结束只 refit
@@ -753,7 +755,30 @@ def simulate_wf(X, params, reduce_test=True, test_size=126, n_jobs=None,
     reduce_test : bool，尾段语义（与 WalkForward.reduce_test 同构，语义同
         simulate_fixed 同名参数）
     test_size : int，折长（天）
-    n_jobs : int | None，cross_val_predict 折级并行度（None = 1，-1 = 全核）
+    n_jobs : int | None，cross_val_predict 折级并行度（None = 1，-1 = 全核）；
+        传入 entry_rebalancing_params 或让 portfolio_params 开 weight_drift 时，
+        skfolio 会强制走顺序路径并禁用折级并行（会发警告）
+    portfolio_params : dict | None，透传给 cross_val_predict 的组合参数（仅影响
+        度量口径，不影响优化）。默认 None 时等价于 {"compounded": True}；此处
+        传入的值逐键覆盖优化器 optimization__portfolio_params 的同名项：
+
+        * Portfolio 与 MultiPeriodPortfolio 共享的度量参数（compounded /
+          risk_free_rate / annualization_factor / fitness_measures / 各风险度量
+          beta）同时作用于 mpt 与其内部每个 leg；
+        * weight_drift=True 时各 test 窗口内权重随资产收益漂移，路径改为顺序
+          执行（上一折 ending_weights 作为下一折 previous_weights），mpt 内部
+          leg 不再是“每折独立静态权重”口径；
+        * name / tag / sample_weight / check_observations_order 仅作用于 mpt；
+        * transaction_costs / management_fees / previous_weights 属优化器参数，
+          不接受（应设在 build_pipeline 的 optimization 上）。
+    entry_rebalancing_params : dict | None，只作用于每条顺序路径**首折**的优化器
+        参数（键名同 optimizer 参数，如 max_turnover / transaction_costs），用于
+        “从零持仓建仓”阶段放宽约束；首折组合计入结果，后续折仍用常规优化器
+        参数。首折 previous_weights 保持缺省 None（空仓起步），无需也不应在此
+        传入 previous_weights——从第二折起由 skfolio 自动链式使用上一折
+        ending_weights。传入后 cross_val_predict 会评估一条顺序策略路径并在
+        组合间传播 previous_weights；仅支持顺序型 CV（WalkForward /
+        TimeSeriesSplit / MultipleRandomizedCV）
     verbose : bool，打印每折摘要
 
     Returns
@@ -800,10 +825,13 @@ def simulate_wf(X, params, reduce_test=True, test_size=126, n_jobs=None,
                          f"test_size = {ts + test_size} 天，当前 {n_obs} 天）")
 
     model = build_pipeline(params)
-    # 每折 Portfolio 与 simulate_fixed 的 leg 同口径（几何累计/回撤）
+    # 每折 Portfolio 与 simulate_fixed 的 leg 同口径（几何累计/回撤）；
+    # 调用方传入的 portfolio_params 逐键覆盖默认的 compounded=True
     model.set_params(optimization__portfolio_params=dict(compounded=True))
+    eval_portfolio_params = {"compounded": True, **(portfolio_params or {})}
     mpt = cross_val_predict(model, X, cv=cv, n_jobs=n_jobs,
-                            portfolio_params=dict(compounded=True))
+                            portfolio_params=eval_portfolio_params,
+                            entry_rebalancing_params=entry_rebalancing_params)
 
     legs = list(mpt.portfolios)
     rows, epochs = [], []
