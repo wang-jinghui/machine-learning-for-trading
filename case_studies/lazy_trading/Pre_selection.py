@@ -7,6 +7,9 @@
   为"单边条件尾部联动指标"（尾部依赖系数或条件尾部相关）。
 * VolumePreSelection：基于平均成交量的流动性预筛选，按成交量保留
   流动性最好的资产（需额外传入 volumes，见类文档）。
+* TrendPreSelection：基于线性趋势 t 值的趋势强度预筛选，用最近固定
+  长度窗口的价格电平回归 t 值排序保留资产（需额外传入 prices，
+  见类文档）。
 * SelectKExtremes：按指定度量值保留 k 个最优或最差资产，k 支持
   整数数量或浮点比例（增强自 skfolio 的 SelectKExtremes）。
 """
@@ -749,6 +752,223 @@ class VolumePreSelection(skf.SelectorMixin, skb.BaseEstimator):
         # Select the top `pct_to_keep` assets with the highest average volumes
         n_to_keep = max(1, int(round(self.pct_to_keep * n_assets)))
         selected_idx = np.argsort(mean_volumes)[-n_to_keep:]
+
+        # Performance tip: `argpartition` could be used here for better efficiency
+        # (O(n log(n)) vs O(n)).
+        self.to_keep_ = np.isin(np.arange(n_assets), selected_idx)
+        return self
+
+    def _get_support_mask(self):
+        skv.check_is_fitted(self)
+        return self.to_keep_
+
+
+class TrendPreSelection(skf.SelectorMixin, skb.BaseEstimator):
+    """按线性趋势 t 值保留趋势最强的资产（趋势强度预筛选）。
+
+    业务目标：在组合构建前剔除无趋势（趋势 t 值弱）的资产，只保留
+    近期存在显著线性趋势的资产。对每只资产取最近 `trend_length` 个
+    价格点做电平回归 price ~ a + b·t，以斜率 t 统计量作为趋势强度：
+
+        * absolute=True：按 |t| 降序排序，涨跌都视为有趋势，保留
+          趋势最强的前 `pct_to_keep` 比例资产；
+        * absolute=False（默认）：按带符号 t 降序排序，只保留最强
+          上行趋势的资产（下行趋势排在末尾，会被剔除）。
+
+    窗口长度取 `min(trend_length, n_observations)`：`trend_length`
+    超过 Prices 行数时自动退化为当前全部行数。窗口行数不足 3（自由度
+    不够，无法估计方差）时无法计算 t 值，此时全部保留并发出 warning。
+    窗口内价格含 NaN/inf 的资产，其 t 值记为 NaN 并按最弱处理直接剔除。
+
+    注意：本选择器需要额外的价格输入 `prices`，而普通 `Pipeline.fit`
+    只会传递 X 与 y，因此 `model.fit(X)` 场景下无法拿到 prices。
+    两种可用方式：
+
+    1) skfolio 的 cross_val_predict（官方推荐）：启用 metadata routing
+       后 prices 作为路由参数传入，且按每折 train 索引自动切片：
+
+           set_config(enable_metadata_routing=True)
+           pipe = Pipeline([
+               ("pre_selection", TrendPreSelection(pct_to_keep=0.5)
+                                .set_fit_request(prices=True)),
+               ("optimization", EqualWeighted()),
+           ])
+           cross_val_predict(pipe, X, cv=cv, params={"prices": prices})
+
+       prices 须与全量 X 同形状（行数 = 总观测数）；skfolio 0.20 的
+       该通道不支持 callable 值（会直接访问 .shape 报错）。
+
+    2) 两段式手动 fit（方案B 等普通 fit 场景）：先 fit 再 transform
+
+           sel = TrendPreSelection(pct_to_keep=0.5)
+           sel.fit(X_window, prices=prices_window)   # 按窗口手动对齐
+           X_sel = sel.transform(X_window)
+
+    Parameters
+    ----------
+    pct_to_keep : float, default=0.5
+        保留比例，取值 (0, 1]。例如 0.5 表示保留趋势最强的 50%
+        资产；比例折算不足 1 只时至少保留 1 只。
+
+    trend_length : int, default=60
+        趋势回归的固定窗口长度（价格点数）。超过输入行数时按实际
+        行数截断，即使用全部可用观测。
+
+    absolute : bool, default=False
+        True 时按 |t| 排序（涨跌均视为趋势），False 时按带符号 t
+        排序（只保留上行趋势）。
+
+    Attributes
+    ----------
+    to_keep_ : BoolArray of shape (n_assets,)
+        布尔数组，True 表示该资产被保留。
+
+    t_values_ : ndarray of shape (n_assets,)
+        每只资产在拟合窗口上的趋势 t 值；NaN 表示窗口内价格含缺失
+        或非有限值；行数不足 3 未做回归时为 0。
+
+    window_used_ : int
+        实际使用的回归窗口长度，即 min(trend_length, n_observations)；
+        行数不足 3 时等于观测行数（未做回归）。
+
+    n_features_in_ : int
+        fit 时观测到的资产数量。
+
+    feature_names_in_ : ndarray of shape (`n_features_in_`,)
+        fit 时观测到的资产名称，仅当 X 的列名全为字符串时定义。
+    """
+
+    to_keep_: BoolArray
+
+    def __init__(
+        self,
+        pct_to_keep: float = 0.5,
+        trend_length: int = 60,
+        absolute: bool = False,
+    ):
+        self.pct_to_keep = pct_to_keep
+        self.trend_length = trend_length
+        self.absolute = absolute
+
+    def _validate_params(self) -> None:
+        if not 0 < self.pct_to_keep <= 1:
+            raise ValueError("`pct_to_keep` must be between 0 and 1 (exclusive of 0)")
+        if not isinstance(self.trend_length, numbers.Integral) or self.trend_length < 3:
+            raise ValueError("`trend_length` must be an integer >= 3")
+
+    def _trend_t_values(self, window: np.ndarray) -> np.ndarray:
+        """对窗口内价格电平做 OLS 回归 price ~ a + b·t，返回各资产斜率 t 值。
+
+        向量化实现：t = slope / se(slope)，等价于 (w-2)·r/sqrt(1-r^2)
+        （r 为价格与时间序号的相关系数），与逐资产循环解析一致。
+        """
+        w = window.shape[0]
+        x = np.arange(w, dtype=np.float64)
+        x -= x.mean()
+        xx = float(x @ x)
+
+        # 含 NaN/inf 的列会在这一步产生 invalid 告警；结果由调用方
+        # 按非有限列统一置 NaN 剔除，此处抑制告警保持输出干净。
+        with np.errstate(invalid="ignore", divide="ignore"):
+            Y = window - window.mean(axis=0)
+            slope = (x @ Y) / xx
+            ss_res = np.sum((Y - x[:, None] * slope) ** 2, axis=0)
+            # 兜底：完美直线或浮点边界导致 ss_res 归零时防除零（沿用 _EPS）
+            var = np.maximum(ss_res / (w - 2), 0.0)
+            var = np.where(var <= _EPS, _EPS, var)
+            se = np.sqrt(var / xx)
+            return slope / se
+
+    def fit(self, X: ArrayLike, y=None, prices: ArrayLike | None = None):
+        """按趋势 t 值运行趋势强度筛选，得到应保留的资产。
+
+        Parameters
+        ----------
+        X : array-like of shape (n_observations, n_assets)
+            资产收益率（仅用于对齐资产维度与数量）。
+
+        y : Ignored
+            未使用，仅为保持 API 一致性。
+
+        prices : array-like of shape (n_observations, n_assets), optional
+            与 X 同形状的价格数据（电平价格），必填。允许含 NaN/inf，
+            对应资产按最弱处理剔除。在 Pipeline 中使用时 prices 可保留
+            全资产列：X 带列名时按名称自动对齐到当前存活资产。
+
+        Returns
+        -------
+        self : TrendPreSelection
+            已拟合的转换器。
+        """
+        # 记录 X 的资产名：管道前置筛选（SelectComplete/DropZeroVariance/
+        # DropCorrelated 等）会裁剪 X 的列，但 metadata routing 只按行切片
+        # prices、不做列变换，故需按名称把 prices 对齐到当前存活资产。
+        x_columns = list(X.columns) if hasattr(X, "columns") else None
+        X = skv.validate_data(self, X)
+        self._validate_params()
+
+        if prices is None:
+            raise ValueError("`prices` is required: pass an array of shape X.shape")
+
+        # prices 保留全资产列（管道内常见）时按 X 的列名取出存活资产；
+        # 已是同列子集时等价于按 X 顺序重排。
+        if x_columns is not None and hasattr(prices, "columns"):
+            missing = [c for c in x_columns if c not in prices.columns]
+            if missing:
+                raise ValueError(
+                    f"`prices` is missing assets {missing} present in X")
+            prices = prices[x_columns]
+
+        # Validate and convert prices to a NumPy array.
+        # ensure_all_finite=False：允许窗口内含 NaN/inf，由下方逐资产
+        # 标记为非有限并按最弱剔除（而非整体报错），保证跨折 shape 稳定。
+        prices = skv.check_array(
+            prices,
+            accept_sparse=False,
+            ensure_all_finite=False,
+            ensure_2d=False,
+            dtype=[np.float64, np.float32],
+            order="C",
+            copy=False,
+            input_name="prices",
+        )
+        if prices.shape != X.shape:
+            raise ValueError(
+                f"Price data {prices.shape} must have the same dimensions as X {X.shape}"
+            )
+
+        n_observations, n_assets = X.shape
+        window_length = min(int(self.trend_length), n_observations)
+        self.window_used_ = window_length
+
+        if window_length < 3:
+            # 自由度不够，无法估计回归方差：无法给出强度排序，全部保留
+            warnings.warn(
+                f"Not enough observations to estimate the trend t-value"
+                f" (window of {window_length} < 3); keeping all assets.",
+                UserWarning,
+                stacklevel=2,
+            )
+            self.t_values_ = np.zeros(n_assets)
+            self.to_keep_ = np.ones(n_assets, dtype=bool)
+            return self
+
+        window = prices[-window_length:]
+        t_values = self._trend_t_values(window)
+        # 窗口内价格含 NaN/inf 的资产：t 值记为 NaN，视为最弱直接剔除
+        invalid = ~np.all(np.isfinite(window), axis=0)
+        t_values = np.where(invalid, np.nan, t_values)
+        self.t_values_ = t_values
+
+        # Select the top `pct_to_keep` assets with the strongest trend:
+        # |t| when absolute=True, signed t otherwise. Invalid (NaN/inf)
+        # assets are mapped to -inf so argsort ranks them lowest and they
+        # are dropped (np.argsort sends NaN to the end, i.e. treated as the
+        # largest, hence the explicit -inf substitution).
+        ranks = np.abs(t_values) if self.absolute else t_values
+        ranks = np.where(np.isfinite(ranks), ranks, -np.inf)
+        n_to_keep = max(1, int(round(self.pct_to_keep * n_assets)))
+        selected_idx = np.argsort(ranks)[-n_to_keep:]
 
         # Performance tip: `argpartition` could be used here for better efficiency
         # (O(n log(n)) vs O(n)).
