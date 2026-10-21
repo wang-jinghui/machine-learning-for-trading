@@ -40,7 +40,7 @@ from skfolio.pre_selection import (
     SelectNonDominated,
 )
 
-from Pre_selection import SelectKExtremes
+from Pre_selection import SelectKExtremes, TrendPreSelection
 
 # Windows GBK 控制台打印中文安全兜底（与 walkforward_parameter_search 顶层一致）
 try:
@@ -176,7 +176,7 @@ def suggest_from_space(trial, space: dict) -> dict:
             params[name] = trial.suggest_float(name, node["low"], node["high"], step=node["step"])
     return params
 
-
+'''
 def build_pipeline(params: dict) -> Pipeline:
     """用一组具体参数构建筛选 + 等权组合 pipeline（与 walkforward 侧同构）。
 
@@ -201,6 +201,35 @@ def build_pipeline(params: dict) -> Pipeline:
             fitness_measures=fm,
         )),
         ("correlate", DropCorrelated(threshold=params["correlate__threshold"])),
+        ("optimization", EqualWeighted()),
+    ])
+'''
+
+def build_pipeline(params: dict) -> Pipeline:
+    """用一组具体参数构建筛选 + 等权组合 pipeline（与 walkforward 侧同构）。
+
+    params 中的 "nondomin__fitness_measures" 支持两种形式：注册表名称
+    （optuna 采样结果）或 measure 组合列表（sklearn 搜索器 set_params 值）。
+    """
+    fm = params["nondomin__fitness_measures"]
+    if isinstance(fm, str):
+        fm = FITNESS_MEASURES[fm]
+    return Pipeline([
+        # 严格模式：剔除所有包含缺失值的资产（前导/末端/内部一律剔除）。
+        # 搜索（CPCV 各路径 fit）与评估/应用（各折 fit）的池口径由
+        # SelectComplete 统一保证：fit 可见列 = 完整资产集，fit/predict
+        # 同一掩码，无需外层人工池过滤。
+        ("complete", SelectComplete(drop_assets_with_internal_nan=True)),
+        ("variance", DropZeroVariance(threshold=1e-8)),
+        ("nondomin", SelectNonDominated(
+            min_n_assets=params["nondomin__min_n_assets"],
+            threshold=params["nondomin__threshold"],
+            fitness_measures=fm,
+        )),
+        ("correlate", DropCorrelated(threshold=params["correlate__threshold"])),
+        ("trend", TrendPreSelection(pct_to_keep=params["trend__pct_to_keep"],
+                                    trend_length=params["trend__trend_length"],
+                                    ).set_fit_request(prices=True)),
         ("optimization", EqualWeighted()),
     ])
 
