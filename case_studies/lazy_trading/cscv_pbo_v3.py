@@ -11,8 +11,8 @@
 --------------------------------------------
 1) 空间枚举：expand_range x product -> N 个配置（字典序，确定性）。
 2) 收益矩阵 M：公共起点 S* = max(train_size)（开头冗余仅可供首块 fit 回看，不产出 M 的行）；自 S* 铺共用块网格（每块 block_size 天）。按 train_size
-   分组——每组 (视图 X.iloc[S*-ts:], WalkForward(test_size=block_size,train_size=ts)) 只定义一次、组内全体候选复用；候选在每个块前 fit 最近ts 天 ->
-   predict 该块。N 条流同起点、同一日期索引（结构性对齐）-> M(T x N)；尾部不足一块丢弃。
+   分组——每组 (视图 X.iloc[S*-ts:], 价格视图 prices.iloc[S*-ts:], WalkForward(test_size=block_size,train_size=ts)) 只定义一次、组内全体候选复用；候选在每个块前
+   fit 最近ts 天 -> predict 该块（prices 经 metadata routing 传给 TrendPreSelection）。N 条流同起点、同一日期索引（结构性对齐）-> M(T x N)；尾部不足一块丢弃。
 3) CSCV 内核 + 四种分析（论文 3.1-3.3；下示默认度量 Sharpe，可用 measure 切换）：
    [1] PBO = freq(lambda <= 0)：IS 冠军 OOS 落在全体中位数之后的比例；
    [2] 性能退化：IS 冠军的 (SR_IS, SR_OOS) 对 + OLS 斜率（过拟合补偿效应表现为负斜率）+ 可达 OOS 区间；
@@ -29,7 +29,7 @@ v1/v2 保持不动（历史口径留档）。本模块复用 cpcv_search_base.bu
 ----
     from cscv_pbo_v3 import (build_strata_report, build_topk_report, cscv_pbo,
                              plot_cscv, plot_dsr, plot_topk, plot_topk_radar)
-    out = cscv_pbo(X, space=search_space, block_size=252, S=16)
+    out = cscv_pbo(X, prices=prices, space=search_space, block_size=252, S=16)
     print(out["report"])                    # 四种分析报告（文本）
     out["pbo"]; out["loss_prob"]; out["degradation"]["slope"]
     out["dominance"]["fsd_holds"]; out["matrix"]; out["meta"]
@@ -40,7 +40,7 @@ v1/v2 保持不动（历史口径留档）。本模块复用 cpcv_search_base.bu
     plot_topk(out, k=5)                     # topK 评估区累计净值（黑虚线=全员截面中位）
     plot_topk_radar(out, k=5)               # topK 五维指标雷达+原始指标表
                                             # （Mean/Variance/MaxDD/CVaR/Kurt）
-    out_mdd = cscv_pbo(X, space=search_space, block_size=252, S=16,
+    out_mdd = cscv_pbo(X, prices=prices, space=search_space, block_size=252, S=16,
                        measure="MAX_DRAWDOWN")  # 切换评价度量（skfolio 口径）
 
 注：评价度量（论文 3.1 的 f = 任意表现统计量）可切换。measure=None 为日频
@@ -98,9 +98,16 @@ except AttributeError:
     pass
 
 from skfolio.model_selection import WalkForward, cross_val_predict
+from sklearn import set_config
 from tqdm.auto import tqdm
 
 from cpcv_search_base import build_pipeline
+
+# Metadata routing：build_pipeline 的 TrendPreSelection 需要 prices 输入
+# （已 .set_fit_request(prices=True)）。该开关是 sklearn 全局配置：未启用时
+# cross_val_predict(params={"prices": ...}) 会把 prices 当作未知 fit 参数
+# 直接传给 Pipeline.fit 而报错。
+set_config(enable_metadata_routing=True)
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent / "cpcv_parameter_search_config.toml"
 
@@ -170,21 +177,49 @@ def load_space(path=None) -> dict:
 # ---------------------------------------------------------------------------
 # 收益矩阵：共用块网格 + 按 train_size 分组复用 walkforward（对齐机制核心）
 # ---------------------------------------------------------------------------
-def build_returns_matrix(X, params_list, *, start=None, block_size=252,
+def build_returns_matrix(X, params_list, *, prices=None, start=None, block_size=252,
                          n_jobs=None, verbose=True):
     """构建 N 条对齐收益流 -> M (T x N)。
 
     对齐机制：公共起点 S* = start（默认 max(train_size)）；自 S* 起铺共用块
     网格 [S*+b*bs, S*+(b+1)*bs)。按 train_size 分组，每组
-    (视图 X.iloc[S*-ts:], WalkForward(test_size=block_size, train_size=ts))
+    (视图 X.iloc[S*-ts:], 价格视图 prices.iloc[S*-ts:],
+     WalkForward(test_size=block_size, train_size=ts))
     只定义一次、组内候选复用（skfolio splitter 为无状态索引生成器，可安全
     复用）；候选在每个块前 fit 最近 ts 天（首块 fit 窗落在开头冗余内）-> 
     predict 该块。n_blocks = (len(X) - S*) // block_size，尾部残块丢弃。
+
+    prices：与 X 逐行对齐的价格面板（TrendPreSelection 的口径输入），经
+    metadata routing 传给管道（cross_val_predict 按每折 train 索引自动切片）。
+    X 与 prices 均为 DataFrame 时要求行索引一致、prices 覆盖 X 的全部资产列
+    （列顺序不限，可含额外资产；按名称的列对齐在 TrendPreSelection 内完成）。
 
     n_jobs：折级并行度（cross_val_predict）；None -> min(n_blocks, cpu 核数)
     ——并行上限即 cv 折数，无需手传；显式传参仅用于限制峰值内存
     （worker 各持视图副本，峰值 ≈ n_jobs x 视图）。
     """
+    if prices is None:
+        raise ValueError(
+            "build_returns_matrix: `prices` 为必填——build_pipeline 中的 "
+            "TrendPreSelection 经 metadata routing 接收 prices（需与 X 逐行对齐）")
+    if isinstance(X, pd.DataFrame) and isinstance(prices, pd.DataFrame):
+        if not prices.index.equals(X.index):
+            raise ValueError("build_returns_matrix: prices 与 X 的行索引不一致")
+        # 列顺序不要求一致：TrendPreSelection 在管道内按 X 的列名对齐 prices；
+        # 但必须覆盖 X 的全部资产列，否则会拖到 fit 阶段才报错、定位成本高。
+        missing = [c for c in X.columns if c not in prices.columns]
+        if missing:
+            raise ValueError(
+                f"build_returns_matrix: prices 缺少 X 的资产列 {missing}")
+    elif np.asarray(prices).shape != np.asarray(X).shape:
+        # 非 DataFrame 无列名可对齐，退化为形状严校验
+        raise ValueError(f"build_returns_matrix: prices 形状 {np.asarray(prices).shape} "
+                         f"与 X 形状 {np.asarray(X).shape} 不一致")
+
+    def _rows(obj, i):
+        """按行位置截取视图：DataFrame 用 iloc，其余转为 ndarray 切片。"""
+        return obj.iloc[i:] if isinstance(obj, pd.DataFrame) else np.asarray(obj)[i:]
+
     ts_list = [int(p["train_size"]) for p in params_list]
     max_ts = max(ts_list)
     if start is None:
@@ -201,9 +236,10 @@ def build_returns_matrix(X, params_list, *, start=None, block_size=252,
     axis = X.index[start:start + n_blocks * block_size]
 
     # 每组 walkforward 定义一次（视图与 splitter 必须成对：视图不按 ts 裁剪
-    # 会导致首折 test 起点错位，共用网格即破坏）
+    # 会导致首折 test 起点错位，共用网格即破坏）；prices 与收益视图同起点截取
     groups = {
-        ts: (X.iloc[start - ts:], WalkForward(test_size=block_size, train_size=ts))
+        ts: (_rows(X, start - ts), _rows(prices, start - ts),
+             WalkForward(test_size=block_size, train_size=ts))
         for ts in sorted(set(ts_list))
     }
     if verbose:
@@ -220,8 +256,9 @@ def build_returns_matrix(X, params_list, *, start=None, block_size=252,
         iterator = tqdm(iterator, total=len(params_list),
                         desc="收益流构建", unit="候选")
     for j, p in iterator:
-        x_view, cv = groups[int(p["train_size"])]
-        mp = cross_val_predict(build_pipeline(p), x_view, cv=cv, n_jobs=n_jobs)
+        x_view, p_view, cv = groups[int(p["train_size"])]
+        mp = cross_val_predict(build_pipeline(p), x_view, cv=cv, n_jobs=n_jobs,
+                               params={"prices": p_view})
         ret = mp.returns_df
         if getattr(ret, "ndim", 1) > 1:
             ret = ret.iloc[:, 0]
@@ -679,7 +716,7 @@ def _cscv_core_measure(m, *, S, chunk, n_bins, name):
 # ---------------------------------------------------------------------------
 # 端到端入口
 # ---------------------------------------------------------------------------
-def cscv_pbo(X, space=None, *, block_size=252, S=16, mat_n_jobs=None,
+def cscv_pbo(X, space=None, *, prices=None, block_size=252, S=16, mat_n_jobs=None,
              start=None, verbose=True, plot=False, measure=None):
     """端到端 CSCV PBO 诊断 v3：空间枚举 -> N 次执行 -> M -> 四种分析。
 
@@ -688,6 +725,10 @@ def cscv_pbo(X, space=None, *, block_size=252, S=16, mat_n_jobs=None,
     X : DataFrame
         资产收益面板（列 = 资产，行 = 日期升序）。每个候选的管道在块前窗口
         fit、对块内 predict，得到该候选的收益流。
+    prices : DataFrame
+        与 X 逐行对齐的价格面板（需覆盖 X 的全部资产列，列顺序不限），作为
+        TrendPreSelection 的趋势回归输入，经 metadata routing 传入管道。必填
+        （build_pipeline 含 TrendPreSelection）。
     space : dict, optional
         参数空间；None -> cpcv_parameter_search_config.toml 默认。
         range 节点 {"low","high","step"} 展开为网格，choice 列表原样。
@@ -737,8 +778,9 @@ def cscv_pbo(X, space=None, *, block_size=252, S=16, mat_n_jobs=None,
         print(f"空间枚举（v3）：{len(space)} 维 -> N = {len(params_list)} 个配置"
               f"（确定性网格，无搜索层）")
 
-    M = build_returns_matrix(X, params_list, start=start, block_size=block_size,
-                             n_jobs=mat_n_jobs, verbose=verbose)
+    M = build_returns_matrix(X, params_list, prices=prices, start=start,
+                             block_size=block_size, n_jobs=mat_n_jobs,
+                             verbose=verbose)
     core = cscv_core(M.to_numpy(), S=S, measure=measure)
     n_blocks = (len(X) - start) // block_size
     result = {**core, "candidates": params_list, "space": space, "matrix": M,
