@@ -45,7 +45,7 @@ purged_size 个间隔日；本模拟为"决策日次交易日建仓"（触发止
     res  = simulate_sl(X, folds=folds, cfg=cfg)                  # SL 模拟
     base = simulate_sl(X, folds=folds, cfg=cfg, conditions=[])   # 无止损基线
     fix  = simulate_fixed(X, params, test_size=126)              # 固定参数：只 refit 不搜索
-    wf   = simulate_wf(X, params, test_size=126)                 # 对拍口径（WalkForward 原生）
+    wf   = simulate_wf(X, params, test_size=126, prices=prices)  # 对拍口径（WalkForward 原生）
     print(summarize_sl(res, base))            # 对比表
     print(res["epochs"]); print(res["triggers"])
     fm = fresh_model(X, params_list)          # 多参数预筛：并集/交集/选中频次
@@ -69,10 +69,17 @@ import numpy as np
 import pandas as pd
 from skfolio import MultiPeriodPortfolio, Portfolio, RiskMeasure
 from skfolio.model_selection import WalkForward, cross_val_predict
+from sklearn import set_config
 
 from cpcv_analysis import empirical_deflate
 from cpcv_search_base import build_pipeline
 from wf_cpcv_search import load_nested_config, search_inner_params
+
+# Metadata routing：build_pipeline 的 TrendPreSelection 需要 prices 输入
+# （已 .set_fit_request(prices=True)）。sklearn 全局开关：未启用时
+# cross_val_predict(params={"prices": ...}) 会把 prices 当作未知 fit 参数
+# 直接传给 Pipeline.fit 而报错。
+set_config(enable_metadata_routing=True)
 
 # Windows GBK 控制台打印中文安全兜底（与同目录脚本一致）
 try:
@@ -723,9 +730,32 @@ def simulate_fixed(X, params, reduce_test=True, test_size=126, conditions=None,
 # ---------------------------------------------------------------------------
 # WalkForward 原生对照实现：simulate_fixed 的独立对拍口径（无止损）
 # ---------------------------------------------------------------------------
+def _align_prices(X, prices):
+    """把 prices 对齐到 X 的行（只对齐行；列对齐由 TrendPreSelection 按名完成）。
+
+    metadata routing 切片 prices 用的是 train 的**位置**索引，不做索引对齐，
+    因此入口处必须保证 prices 与 X 行同序同长：DataFrame 按 X.index 取出重排，
+    ndarray 无索引可比则要求形状一致。列只要求覆盖（顺序不限），缺失列由
+    TrendPreSelection 报错。
+    """
+    if prices is None:
+        raise ValueError("prices 为必填：build_pipeline 的 TrendPreSelection 经 "
+                         "metadata routing 接收价格面板（需与 X 逐行对齐）")
+    if isinstance(X, pd.DataFrame) and isinstance(prices, pd.DataFrame):
+        missing = X.index.difference(prices.index)
+        if len(missing):
+            raise ValueError(f"prices 缺少 X 的 {len(missing)} 个交易日"
+                             f"（首个缺失 {missing[0].date()}）")
+        return prices.loc[X.index]
+    if np.asarray(prices).shape != np.asarray(X).shape:
+        raise ValueError(f"prices 形状 {np.asarray(prices).shape} 与 X 形状 "
+                         f"{np.asarray(X).shape} 不一致")
+    return prices
+
+
 def simulate_wf(X, params, reduce_test=True, test_size=126, n_jobs=None,
                 verbose=True, portfolio_params=None,
-                entry_rebalancing_params=None) -> dict:
+                entry_rebalancing_params=None, prices=None) -> dict:
     """WalkForward + cross_val_predict 版固定参数滚动模拟（simulate_fixed 的独立对拍实现）。
 
     与 simulate_fixed(conditions=[]) 语义同构——固定参数、每折结束只 refit
@@ -752,6 +782,9 @@ def simulate_wf(X, params, reduce_test=True, test_size=126, n_jobs=None,
     ----------
     X : pd.DataFrame，与 WF+CPCV 同口径收益数据（DatetimeIndex 升序）
     params : dict，一组完整 pipeline 参数（契约同 build_pipeline），含 train_size
+    prices : pd.DataFrame | array-like，与 X 逐行对齐的价格面板（覆盖 X 的
+        全部资产列，列顺序不限）。TrendPreSelection 的口径输入，经 metadata
+        routing 传给管道。必填（build_pipeline 含 TrendPreSelection）。
     reduce_test : bool，尾段语义（与 WalkForward.reduce_test 同构，语义同
         simulate_fixed 同名参数）
     test_size : int，折长（天）
@@ -796,7 +829,7 @@ def simulate_wf(X, params, reduce_test=True, test_size=126, n_jobs=None,
     对拍示例::
 
         fix = simulate_fixed(X, params, test_size=126, conditions=[], verbose=False)
-        wf  = simulate_wf(X, params, test_size=126, verbose=False)
+        wf  = simulate_wf(X, params, test_size=126, verbose=False, prices=prices)
         np.testing.assert_allclose(fix["daily"]["ret"], wf["daily"]["ret"],
                                    rtol=1e-9, atol=1e-12)
         np.testing.assert_allclose(fix["daily"]["net_global"],
@@ -814,6 +847,8 @@ def simulate_wf(X, params, reduce_test=True, test_size=126, n_jobs=None,
     if ts >= n_obs:
         raise ValueError(f"数据仅 {n_obs} 天，不足首个训练窗口（train_size={ts}）"
                          f"+ 1 天建仓")
+    # 行对齐必须在切折之前完成：cross_val_predict 用位置索引切片 train 段
+    prices = _align_prices(X, prices)
 
     # 折位与 simulate_fixed 的 epoch 调度同构：无 purge（决策日次一交易日建仓）、
     # 固定窗（expand_train=False）、尾段语义同 reduce_test
@@ -831,7 +866,8 @@ def simulate_wf(X, params, reduce_test=True, test_size=126, n_jobs=None,
     eval_portfolio_params = {"compounded": True, **(portfolio_params or {})}
     mpt = cross_val_predict(model, X, cv=cv, n_jobs=n_jobs,
                             portfolio_params=eval_portfolio_params,
-                            entry_rebalancing_params=entry_rebalancing_params)
+                            entry_rebalancing_params=entry_rebalancing_params,
+                            params={"prices": prices})
 
     legs = list(mpt.portfolios)
     rows, epochs = [], []
