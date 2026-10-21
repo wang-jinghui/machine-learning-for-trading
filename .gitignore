@@ -216,4 +216,5 @@ case_studies/*/catalog/*.json
 !/case_studies/lazy_trading/logs/WF_CPCV_PS_126.log
 !/case_studies/lazy_trading/logs/WF_CPCV_PS_252.log
 !/case_studies/lazy_trading/logs/CSCV_252.log
+!/case_studies/lazy_trading/logs/CSCV_252_V2.log
 /case_studies/lazy_trading/logs/*.pkl
